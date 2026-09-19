@@ -1,0 +1,11 @@
+# AI Phone Assistant ProGuard Flags
+# Copyright (C) 2024 The LineageOS Project
+
+# Components referenced from AndroidManifest.xml must not be stripped
+-keep class com.android.aiphoneassistant.AIPhoneAssistantApplication { *; }
+-keep class com.android.aiphoneassistant.AIPhoneAssistantService { *; }
+-keep class com.android.aiphoneassistant.SettingsActivity { *; }
+-keep class com.android.aiphoneassistant.BootReceiver { *; }
+
+# Keep inner classes (callbacks, action types) accessed across boundaries
+-keepclassmembers class com.android.aiphoneassistant.** { *; }

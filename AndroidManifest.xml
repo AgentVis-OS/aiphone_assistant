@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2024 The LineageOS Project
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+-->
+<!--
+     Privileged system app for AI-assisted screen reading and input automation.
+
+     Notes on deliberately absent attributes:
+     - No android:process="system": that would load the app's components into
+       the system_server process, where any app crash soft-reboots the device.
+       The app runs in its own process; sharedUserId below still maps it to
+       the system_app SELinux domain.
+     - No android:persistent: the service is started explicitly by
+       SettingsActivity / BootReceiver once the user enables it.
+     - ScreenCaptureService / InputInjectionService / LLMClientService are
+       plain helper classes instantiated by AIPhoneAssistantService, so they
+       must NOT be declared as <service> components here.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.android.aiphoneassistant"
+    android:sharedUserId="android.uid.system">
+
+    <!-- Signature-level permissions, granted via
+         privapp-permissions-aiphoneassistant.xml to this platform-signed priv-app -->
+    <uses-permission android:name="android.permission.CAPTURE_VIDEO_OUTPUT" />
+    <uses-permission android:name="android.permission.CAPTURE_SECURE_VIDEO_OUTPUT" />
+    <uses-permission android:name="android.permission.READ_FRAME_BUFFER" />
+    <uses-permission android:name="android.permission.INJECT_EVENTS" />
+
+    <!-- Normal permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Overlay effects drawn while thinking/acting (preinstalled apps are granted it) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application
+        android:name=".AIPhoneAssistantApplication"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
+
+        <!-- Main service: screen capture + LLM + input injection -->
+        <service
+            android:name=".AIPhoneAssistantService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="ai_assistant" />
+        </service>
+
+        <!-- Boot receiver: starts the service after boot when the user enabled it -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Settings UI: endpoint, model, API key, task, capture interval -->
+        <activity
+            android:name=".SettingsActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/settings_title"
+            android:theme="@style/Theme.AIPhoneAssistant">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+</manifest>

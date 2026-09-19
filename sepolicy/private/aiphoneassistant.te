@@ -1,0 +1,34 @@
+# SELinux policy for AIPhoneAssistant (system_ext / system-side rules)
+#
+# AIPhoneAssistant runs as a platform-signed priv-app with
+# sharedUserId="android.uid.system", so it lands in the `system_app` SELinux
+# domain by default. Core policy does NOT pre-grant system_app the ability to
+# capture the screen via SurfaceFlinger nor to reach the input injection
+# service, so both operations are silently denied (avc: denied) on an
+# enforcing build.
+#
+# This file adds the minimum allows that make the PRIMARY code paths work:
+#   - SurfaceControl.screenshot()   -> SurfaceFlinger binder service
+#   - InputManager.injectInputEvent() -> InputManagerService ("input" service)
+#
+# Install location (device tree):
+#   device/xiaomi/sm8250-common/sepolicy/private/aiphoneassistant.te
+# It is picked up automatically because BoardConfigCommon.mk already sets:
+#   SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += $(COMMON_PATH)/sepolicy/private
+#
+# NOTE: service types (surfaceflinger_service, input_service) are system-side,
+# so these rules belong in the system_ext private policy, NOT vendor.
+
+# --- Screen capture: talk to SurfaceFlinger to capture a frame ---
+# Find the "SurfaceFlinger" service and make the binder call (captureScreen).
+allow system_app surfaceflinger_service:service_manager find;
+binder_call(system_app, surfaceflinger)
+
+# Receive the captured GraphicBuffer fd back from SurfaceFlinger.
+allow system_app surfaceflinger:fd use;
+
+# --- Input injection: reach InputManagerService (IInputManager) ---
+# InputManager.injectInputEvent() resolves the "input" system service.
+allow system_app input_service:service_manager find;
+# If audit2allow reports a binder denial to system_server for input, also add:
+#   binder_call(system_app, system_server)

@@ -1,0 +1,39 @@
+# SELinux policy for AIPhoneAssistant (vendor / device-node rules) — OPTIONAL
+#
+# These rules are ONLY needed if you use the VirtualDisplay + ImageReader
+# capture fallback (GraphicBuffer allocation). The PRIMARY path in the code,
+# SurfaceControl.screenshot() via reflection, does NOT need any of these —
+# it works purely over the SurfaceFlinger binder (see
+# sepolicy/private/aiphoneassistant.te).
+#
+# So: apply this file only if the screenshot fallback (or a future direct
+# framebuffer / gralloc path) reports avc denials on these device nodes.
+#
+# Install location (device tree):
+#   device/xiaomi/sm8250-common/sepolicy/vendor/aiphoneassistant.te
+# Picked up automatically because BoardConfigCommon.mk already sets:
+#   BOARD_VENDOR_SEPOLICY_DIRS += $(COMMON_PATH)/sepolicy/vendor
+#
+# CAUTION: some of these may trip a CDD `neverallow` on a strict build
+# (e.g. direct app access to certain DMA heaps). If `make` fails on a
+# neverallow, do NOT widen the rule globally — instead drive the exact set
+# from `audit2allow` (see SEPOLICY.md) and, if necessary, move the app into
+# its own SELinux domain (Option A in SEPOLICY.md).
+
+# GPU device (Qualcomm Adreno on lmi/sm8250): /dev/kgsl-3d0
+allow system_app gpu_device:chr_file { read write getattr map ioctl };
+
+# Legacy ION allocator: /dev/ion
+allow system_app ion_device:chr_file { read write getattr map ioctl };
+
+# Framebuffer fallback: /dev/graphics/fb0
+allow system_app graphics_device:chr_file { read write getattr map ioctl };
+
+# ashmem (binder buffer sharing)
+allow system_app ashmem_device:chr_file { read write getattr map ioctl };
+
+# NOTE: /dev/dma_heap/qcom,display (vendor_dmabuf_display_heap_device) is a
+# Qualcomm vendor type that is NOT visible in the neverallow-check policy
+# aggregation, so it fails the build ("unknown type"). Do NOT add it by hand.
+# If a DMA-heap denial shows up in `dmesg | grep avc`, generate the exact rule
+# with audit2allow and add it from the device's own vendor sepolicy context.
