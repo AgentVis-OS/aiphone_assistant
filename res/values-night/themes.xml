@@ -17,16 +17,16 @@
 <resources>
     <!-- Dark variant of the base theme (same attribute set, dark palette). -->
     <style name="Theme.AIPhoneAssistant" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:colorPrimary">@android:color/system_accent1_200</item>
-        <item name="android:colorPrimaryDark">@android:color/system_accent1_500</item>
-        <item name="android:colorAccent">@android:color/system_accent1_200</item>
-        <item name="android:windowBackground">@android:color/system_neutral1_900</item>
-        <item name="android:textColorPrimary">@android:color/system_neutral1_100</item>
-        <item name="android:textColorSecondary">@android:color/system_neutral1_400</item>
+        <item name="android:colorPrimary">#818CF8</item>
+        <item name="android:colorPrimaryDark">#3730A3</item>
+        <item name="android:colorAccent">#818CF8</item>
+        <item name="android:windowBackground">#0F1216</item>
+        <item name="android:textColorPrimary">#E5E7EB</item>
+        <item name="android:textColorSecondary">#98A2B3</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="surfaceColor">@android:color/system_neutral1_800</item>
-        <item name="surfaceVariantColor">@android:color/system_accent1_700</item>
-        <item name="accentColor">@android:color/system_accent1_200</item>
-        <item name="onAccentColor">@android:color/system_neutral1_900</item>
+        <item name="surfaceColor">#1A1F27</item>
+        <item name="surfaceVariantColor">#232B3A</item>
+        <item name="accentColor">#4F46E5</item>
+        <item name="onAccentColor">#FFFFFF</item>
     </style>
 </resources>

@@ -386,16 +386,12 @@ public class ConversationListActivity extends Activity {
                 view = LayoutInflater.from(ConversationListActivity.this).inflate(
                         R.layout.item_conversation, parent, false);
             }
-            TextView avatar = view.findViewById(R.id.conv_avatar);
             TextView title = view.findViewById(R.id.conv_row_title);
             TextView state = view.findViewById(R.id.conv_row_state);
             TextView summary = view.findViewById(R.id.conv_row_summary);
             TextView time = view.findViewById(R.id.conv_row_time);
 
-            String task = conv.task != null ? conv.task : "";
-            avatar.setText(task.isEmpty() ? "✦"
-                    : task.substring(0, 1).toUpperCase());
-            title.setText(task);
+            title.setText(conv.task != null ? conv.task : "");
             summary.setText(conv.summary != null ? conv.summary : "");
             summary.setVisibility(
                     conv.summary != null && !conv.summary.isEmpty()
@@ -406,18 +402,18 @@ public class ConversationListActivity extends Activity {
             state.setText(ChatStore.stateLabel(ConversationListActivity.this, conv.state));
             state.setTextColor(stateColor);
             state.getBackground().mutate().setTint(
-                    (stateColor & 0x00FFFFFF) | (31 << 24));
+                    (stateColor & 0x00FFFFFF) | (26 << 24));
             view.setOnClickListener(v ->
                     startActivity(ChatActivity.intent(ConversationListActivity.this, conv.id)));
             return view;
         }
 
         private int stateColor(String state) {
-            if (ChatStore.STATE_EXECUTING.equals(state)) return 0xFF1E88E5;
-            if (ChatStore.STATE_PAUSED.equals(state)) return 0xFFFB8C00;
-            if (ChatStore.STATE_DONE.equals(state)) return 0xFF2E9E4F;
-            if (ChatStore.STATE_STALLED.equals(state)) return 0xFFE5484D;
-            return 0xFF8A8F99;
+            if (ChatStore.STATE_EXECUTING.equals(state)) return 0xFF2563EB;
+            if (ChatStore.STATE_PAUSED.equals(state)) return 0xFFD97706;
+            if (ChatStore.STATE_DONE.equals(state)) return 0xFF16A34A;
+            if (ChatStore.STATE_STALLED.equals(state)) return 0xFFDC2626;
+            return 0xFF6B7280;
         }
     }
 }
