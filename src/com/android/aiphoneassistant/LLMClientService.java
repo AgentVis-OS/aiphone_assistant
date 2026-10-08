@@ -37,8 +37,11 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * LLM client for OpenAI-compatible chat completion APIs with vision support
@@ -80,6 +83,11 @@ public class LLMClientService {
     private final ExecutorService mExecutor;
     private final Handler mMainHandler;
 
+    // The connection of the request currently in flight, kept so the task can
+    // be interrupted (disconnect() aborts the blocking read on the executor).
+    private final AtomicReference<HttpURLConnection> mInFlight = new AtomicReference<>();
+    private final AtomicBoolean mCancelled = new AtomicBoolean(false);
+
     public LLMClientService(Context context) {
         mContext = context.getApplicationContext();
         mExecutor = Executors.newSingleThreadExecutor();
@@ -92,48 +100,62 @@ public class LLMClientService {
     }
 
     /**
-     * Analyze a full-resolution screenshot against the configured task.
+     * Analyze a full-resolution screenshot against the given task.
      *
      * @param screenshot full-resolution screen bitmap
      * @param screenW real screen width in pixels
      * @param screenH real screen height in pixels
-     * @param callback invoked on the main thread with an action whose
-     *                 coordinates are already in real screen pixels (or null
-     *                 when the model chose no action)
+     * @param task the active task text (the assistant now has one task at a
+     *             time, managed via ChatStore — no longer read from prefs)
+     * @param recentActions descriptions of actions already performed for this
+     *                      task, oldest first; included in the prompt so the
+     *                      model avoids repeating itself and can tell when
+     *                      the goal is reached
+     * @param callback invoked on the main thread with a decision whose action
+     *                 coordinates are already in real screen pixels
      */
-    public void analyzeScreen(Bitmap screenshot, int screenW, int screenH,
-            LLMCallback callback) {
+    public void analyzeScreen(Bitmap screenshot, int screenW, int screenH, String task,
+            List<String> recentActions, LLMCallback callback) {
         SharedPreferences prefs = getPrefs(mContext);
         String endpoint = prefs.getString(KEY_ENDPOINT, "").trim();
         String apiKey = prefs.getString(KEY_API_KEY, "").trim();
         String model = prefs.getString(KEY_MODEL, "gpt-4o").trim();
-        String task = prefs.getString(KEY_TASK, "").trim();
 
-        if (endpoint.isEmpty() || task.isEmpty()) {
+        if (endpoint.isEmpty() || task == null || task.trim().isEmpty()) {
             if (callback != null) {
                 callback.onError("LLM endpoint or task not configured");
             }
             return;
         }
 
+        mCancelled.set(false);
         mExecutor.execute(() -> {
             try {
                 Bitmap scaled = scaleBitmap(screenshot);
                 String imageBase64 = bitmapToBase64(scaled);
-                String prompt = buildPrompt(task, scaled.getWidth(), scaled.getHeight());
+                String prompt = buildPrompt(task, scaled.getWidth(), scaled.getHeight(),
+                        recentActions);
                 String response = sendToLLM(endpoint, apiKey, model, prompt, imageBase64);
-                InputInjectionService.InputAction action =
-                        parseResponse(response, screenW, screenH,
-                                scaled.getWidth(), scaled.getHeight());
+                LLMDecision decision = parseDecision(response, screenW, screenH,
+                        scaled.getWidth(), scaled.getHeight());
                 if (scaled != screenshot) {
                     scaled.recycle();
                 }
                 mMainHandler.post(() -> {
                     if (callback != null) {
-                        callback.onLLMResponse(response, action);
+                        callback.onDecision(decision);
                     }
                 });
             } catch (Exception e) {
+                if (mCancelled.get()) {
+                    Log.i(TAG, "LLM request cancelled");
+                    mMainHandler.post(() -> {
+                        if (callback != null) {
+                            callback.onInterrupted();
+                        }
+                    });
+                    return;
+                }
                 Log.e(TAG, "LLM analysis failed", e);
                 mMainHandler.post(() -> {
                     if (callback != null) {
@@ -142,6 +164,19 @@ public class LLMClientService {
                 });
             }
         });
+    }
+
+    /**
+     * Abort the request currently in flight (used by the user interrupt). The
+     * blocked read fails on the executor thread and surfaces as
+     * {@link LLMCallback#onInterrupted()}.
+     */
+    public void cancelInFlight() {
+        mCancelled.set(true);
+        HttpURLConnection connection = mInFlight.get();
+        if (connection != null) {
+            connection.disconnect();
+        }
     }
 
     /**
@@ -189,29 +224,43 @@ public class LLMClientService {
         return s.length() <= max ? s : s.substring(0, max) + "…";
     }
 
-    private String buildPrompt(String task, int imageWidth, int imageHeight) {
-        return "You are shown a screenshot of an Android phone (image size: "
-                + imageWidth + "x" + imageHeight + " pixels). "
-                + "The user's task: \"" + task + "\".\n"
-                + "Decide the single best next action to progress the task, then answer with "
-                + "ONLY one JSON object and no other text:\n"
-                + "{\"action\":\"tap\",\"x\":<int>,\"y\":<int>}\n"
-                + "{\"action\":\"swipe\",\"x\":<int>,\"y\":<int>,\"endX\":<int>,\"endY\":<int>,"
-                + "\"durationMs\":<int>}\n"
-                + "{\"action\":\"long_press\",\"x\":<int>,\"y\":<int>,\"durationMs\":<int>}\n"
-                + "{\"action\":\"scroll\",\"x\":<int>,\"y\":<int>,\"deltaY\":<int>}"
-                + "  // negative deltaY scrolls content up\n"
-                + "{\"action\":\"key_press\",\"key\":\"BACK\"}"
-                + "  // BACK, HOME, APP_SWITCH, ENTER, DEL, DPAD_UP, DPAD_DOWN, VOLUME_UP...\n"
-                + "{\"action\":\"text_input\",\"text\":\"...\"}"
-                + "  // only when a text field is focused\n"
-                + "{\"action\":\"wait\",\"durationMs\":<int>}"
-                + "  // when the screen is still loading\n"
-                + "{\"action\":\"none\"}"
-                + "  // no action helps, or the task is already complete\n"
-                + "Coordinates must be in image pixel space. Rules: tap precisely on visible "
-                + "controls; if the previous action visibly failed, try a different approach; "
-                + "when unsure or when the task is finished, choose \"none\".";
+    private String buildPrompt(String task, int imageWidth, int imageHeight,
+            List<String> recentActions) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("You are shown a screenshot of an Android phone (image size: ")
+                .append(imageWidth).append("x").append(imageHeight).append(" pixels). ")
+                .append("The user's task: \"").append(task).append("\".\n");
+        if (recentActions != null && !recentActions.isEmpty()) {
+            prompt.append("Actions you already performed for this task, oldest first:\n");
+            for (int i = 0; i < recentActions.size(); i++) {
+                prompt.append(i + 1).append(". ").append(recentActions.get(i)).append('\n');
+            }
+            prompt.append("Do not repeat an action that did not help; try another approach.\n");
+        }
+        prompt.append("Decide the single best next action to progress the task, then answer with ")
+                .append("ONLY one JSON object and no other text:\n")
+                .append("{\"action\":\"tap\",\"x\":<int>,\"y\":<int>}\n")
+                .append("{\"action\":\"swipe\",\"x\":<int>,\"y\":<int>,\"endX\":<int>,\"endY\":<int>,")
+                .append("\"durationMs\":<int>}\n")
+                .append("{\"action\":\"long_press\",\"x\":<int>,\"y\":<int>,\"durationMs\":<int>}\n")
+                .append("{\"action\":\"scroll\",\"x\":<int>,\"y\":<int>,\"deltaY\":<int>}")
+                .append("  // negative deltaY scrolls content up\n")
+                .append("{\"action\":\"key_press\",\"key\":\"BACK\"}")
+                .append("  // BACK, HOME, APP_SWITCH, ENTER, DEL, DPAD_UP, DPAD_DOWN, VOLUME_UP...\n")
+                .append("{\"action\":\"text_input\",\"text\":\"...\"}")
+                .append("  // only when a text field is focused\n")
+                .append("{\"action\":\"wait\",\"durationMs\":<int>}")
+                .append("  // when the screen is still loading\n")
+                .append("{\"action\":\"none\"}")
+                .append("  // nothing useful can be done right now; prefer \"wait\" for loading\n")
+                .append("{\"action\":\"done\",\"summary\":\"<one short sentence>\"}")
+                .append("  // ONLY when the task's goal is now VISIBLY achieved on this screen; ")
+                .append("write the summary in the same language as the user's task\n")
+                .append("Coordinates must be in image pixel space. Rules: tap precisely on visible ")
+                .append("controls; if the previous action visibly failed, try a different approach; ")
+                .append("choose \"done\" when the goal is clearly reached, \"wait\" while loading, ")
+                .append("\"none\" only when stuck with nothing to try.");
+        return prompt.toString();
     }
 
     /** Downscale so the largest dimension is at most {@link #MAX_IMAGE_SIZE}. */
@@ -264,12 +313,15 @@ public class LLMClientService {
             }
             messages.put(userMessage);
             requestBody.put("messages", messages);
-            requestBody.put("max_tokens", 500);
+            // Generous budget: reasoning models spend tokens on the hidden
+            // chain-of-thought before the JSON answer.
+            requestBody.put("max_tokens", 8192);
         } catch (JSONException e) {
             throw new IOException("Failed to build request", e);
         }
 
         HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
+        mInFlight.set(connection);
         try {
             connection.setRequestMethod("POST");
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
@@ -300,12 +352,26 @@ public class LLMClientService {
                 if (choices.length() == 0) {
                     throw new IOException("Empty choices in LLM response");
                 }
-                return choices.getJSONObject(0).getJSONObject("message").getString("content");
+                JSONObject message = choices.getJSONObject(0).getJSONObject("message");
+                String content = message.optString("content", "").trim();
+                if (content.isEmpty()) {
+                    // Reasoning models can spend their whole budget on the
+                    // chain-of-thought field; the JSON is often in there.
+                    content = message.optString("reasoning_content", "").trim();
+                    if (!content.isEmpty()) {
+                        Log.i(TAG, "Empty content; falling back to reasoning_content");
+                    }
+                }
+                if (content.isEmpty()) {
+                    throw new IOException("Empty response from model");
+                }
+                return content;
             } catch (JSONException e) {
                 throw new IOException("Failed to parse LLM response: "
                         + shorten(responseBody, 200), e);
             }
         } finally {
+            mInFlight.compareAndSet(connection, null);
             connection.disconnect();
         }
     }
@@ -326,24 +392,45 @@ public class LLMClientService {
     }
 
     /**
-     * Parse the model's reply into an action with REAL screen coordinates.
-     * Returns null for "none"/"done" style answers, malformed replies or
-     * actions with missing required fields — never a guessed default tap.
+     * Parse the model's reply into a {@link LLMDecision} with REAL screen
+     * coordinates. Malformed replies or actions with missing required fields
+     * yield {@code none} — never a guessed default tap.
      */
-    private InputInjectionService.InputAction parseResponse(String response, int screenW,
+    private LLMDecision parseDecision(String response, int screenW,
             int screenH, int imageW, int imageH) {
         if (response == null) {
-            return null;
+            return LLMDecision.none(null);
         }
         try {
             int jsonStart = response.indexOf('{');
             int jsonEnd = response.lastIndexOf('}');
             if (jsonStart < 0 || jsonEnd <= jsonStart) {
                 Log.w(TAG, "No JSON found in response: " + shorten(response, 200));
-                return null;
+                return LLMDecision.none(response);
             }
             JSONObject json = new JSONObject(response.substring(jsonStart, jsonEnd + 1));
             String actionType = json.optString("action", "").trim().toLowerCase();
+
+            // Task completion. The legacy synonyms map to done as well — models
+            // trained on older prompts still answer finish/complete/stop.
+            switch (actionType) {
+                case "done":
+                case "finish":
+                case "complete":
+                case "stop": {
+                    String summary = json.optString("summary", "").trim();
+                    if (summary.isEmpty()) {
+                        summary = json.optString("text", "").trim();
+                    }
+                    Log.i(TAG, "Model reports task done: " + shorten(summary, 80));
+                    return LLMDecision.done(summary, response);
+                }
+                case "none":
+                    Log.i(TAG, "Model chose no action");
+                    return LLMDecision.none(response);
+                default:
+                    break;
+            }
 
             InputInjectionService.InputAction action;
             switch (actionType) {
@@ -351,7 +438,7 @@ public class LLMClientService {
                 case "click":
                     if (!json.has("x") || !json.has("y")) {
                         Log.w(TAG, "tap without coordinates, ignoring");
-                        return null;
+                        return LLMDecision.none(response);
                     }
                     action = InputInjectionService.InputAction.tap(
                             (float) json.getDouble("x"), (float) json.getDouble("y"));
@@ -361,7 +448,7 @@ public class LLMClientService {
                     if (!json.has("x") || !json.has("y")
                             || !json.has("endX") || !json.has("endY")) {
                         Log.w(TAG, "swipe missing endpoints, ignoring");
-                        return null;
+                        return LLMDecision.none(response);
                     }
                     action = InputInjectionService.InputAction.swipe(
                             (float) json.getDouble("x"), (float) json.getDouble("y"),
@@ -371,7 +458,7 @@ public class LLMClientService {
 
                 case "long_press":
                     if (!json.has("x") || !json.has("y")) {
-                        return null;
+                        return LLMDecision.none(response);
                     }
                     action = InputInjectionService.InputAction.longPress(
                             (float) json.getDouble("x"), (float) json.getDouble("y"),
@@ -382,7 +469,7 @@ public class LLMClientService {
                 case "scroll_up":
                 case "scroll_down":
                     if (!json.has("x") || !json.has("y")) {
-                        return null;
+                        return LLMDecision.none(response);
                     }
                     float deltaY = (float) json.optDouble("deltaY",
                             "scroll_down".equals(actionType) ? 500 : -500);
@@ -403,7 +490,7 @@ public class LLMClientService {
                     }
                     if (keyCode == 0) {
                         Log.w(TAG, "key_press with unknown key: " + json);
-                        return null;
+                        return LLMDecision.none(response);
                     }
                     action = InputInjectionService.InputAction.keyPress(keyCode);
                     break;
@@ -413,7 +500,7 @@ public class LLMClientService {
                 case "type": {
                     String text = json.optString("text", "");
                     if (text.isEmpty()) {
-                        return null;
+                        return LLMDecision.none(response);
                     }
                     action = InputInjectionService.InputAction.textInput(text);
                     break;
@@ -424,17 +511,9 @@ public class LLMClientService {
                             json.optLong("durationMs", 1000));
                     break;
 
-                case "none":
-                case "done":
-                case "finish":
-                case "complete":
-                case "stop":
-                    Log.i(TAG, "Model chose no action (" + actionType + ")");
-                    return null;
-
                 default:
                     Log.w(TAG, "Unknown action type: " + actionType);
-                    return null;
+                    return LLMDecision.none(response);
             }
 
             // The model saw the downscaled image; map coordinates back to the
@@ -446,10 +525,10 @@ public class LLMClientService {
             action.endX *= sx;
             action.endY *= sy;
             action.deltaY *= sy;
-            return action;
+            return LLMDecision.action(action, response);
         } catch (Exception e) {
             Log.e(TAG, "Error parsing response", e);
-            return null;
+            return LLMDecision.none(response);
         }
     }
 
@@ -463,12 +542,50 @@ public class LLMClientService {
 
     /** Callback for screen analysis. */
     public interface LLMCallback {
-        void onLLMResponse(String response, InputInjectionService.InputAction action);
+        void onDecision(LLMDecision decision);
+        /** The in-flight request was cancelled by the user interrupt. */
+        void onInterrupted();
         void onError(String error);
     }
 
     /** Callback for the connection test. */
     public interface TestCallback {
         void onResult(boolean success, String detail);
+    }
+
+    /**
+     * What the model decided to do: perform an {@link #ACTION}, report the
+     * task {@link #DONE} (with a summary) or {@link #NONE} (nothing useful
+     * to do right now).
+     */
+    public static class LLMDecision {
+        public enum Kind { ACTION, DONE, NONE }
+
+        public final Kind kind;
+        /** Non-null only for {@link Kind#ACTION}; coordinates in screen pixels. */
+        public final InputInjectionService.InputAction action;
+        /** One-sentence summary of what was achieved; only for {@link Kind#DONE}. */
+        public final String summary;
+        public final String raw;
+
+        private LLMDecision(Kind kind, InputInjectionService.InputAction action,
+                String summary, String raw) {
+            this.kind = kind;
+            this.action = action;
+            this.summary = summary;
+            this.raw = raw;
+        }
+
+        public static LLMDecision action(InputInjectionService.InputAction action, String raw) {
+            return new LLMDecision(Kind.ACTION, action, null, raw);
+        }
+
+        public static LLMDecision done(String summary, String raw) {
+            return new LLMDecision(Kind.DONE, null, summary, raw);
+        }
+
+        public static LLMDecision none(String raw) {
+            return new LLMDecision(Kind.NONE, null, null, raw);
+        }
     }
 }

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2024 The LineageOS Project
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+-->
+<resources>
+    <!-- App name -->
+    <string name="app_name">AI 手机助手</string>
+
+    <!-- Settings activity -->
+    <string name="settings_title">AI 助手设置</string>
+
+    <!-- Notification strings -->
+    <string name="notification_channel_name">AI 手机助手</string>
+    <string name="notification_channel_description">运行 AI 助手进行屏幕分析与输入自动化</string>
+    <string name="notification_title">AI 手机助手</string>
+    <string name="notification_text">AI 助手运行中</string>
+    <string name="notification_starting">正在启动…</string>
+    <string name="notification_task_title_format">正在执行：%1$s</string>
+    <string name="notification_observing">正在观察屏幕变化…</string>
+    <string name="notification_thinking">正在思考…</string>
+    <string name="notification_acting_format">%1$s</string>
+    <string name="notification_paused">已暂停——等待你确认</string>
+
+    <!-- Task result notification channel -->
+    <string name="notification_channel_result_name">任务结果</string>
+    <string name="notification_channel_result_description">任务完成、停止与停滞通知</string>
+    <string name="notification_result_done_title">任务完成</string>
+    <string name="notification_result_interrupted_title">任务已停止</string>
+    <string name="notification_result_stalled_title">任务停滞已停止</string>
+
+    <!-- Chat UI -->
+    <string name="chat_subtitle_idle">待命——发送任务即可激活</string>
+    <string name="chat_subtitle_executing_format">执行中：%1$s</string>
+    <string name="chat_subtitle_paused">已暂停——请在屏幕上的对话框中确认</string>
+    <string name="chat_input_hint">描述一个任务，例如：打开浏览器查一下天气</string>
+    <string name="chat_input_disabled">任务执行中——手机正被占用</string>
+    <string name="chat_send">发送</string>
+    <string name="chat_empty">该会话暂无消息。</string>
+    <string name="chat_screenshot_desc">该动作执行前的屏幕截图</string>
+    <string name="back_to_list">返回会话列表</string>
+
+    <!-- Conversation list -->
+    <string name="conv_empty">还没有会话。\n在下方发送你的第一个任务吧。</string>
+    <string name="conv_state_pending">待执行</string>
+    <string name="conv_state_executing">执行中</string>
+    <string name="conv_state_paused">已暂停</string>
+    <string name="conv_state_done">已完成</string>
+    <string name="conv_state_stopped">已停止</string>
+    <string name="conv_state_interrupted">已手动停止</string>
+    <string name="conv_state_stalled">停滞已停止</string>
+    <string name="group_week_ago">一周前</string>
+    <string name="group_month_ago">一个月前</string>
+
+    <!-- Interrupt bar + confirm dialog -->
+    <string name="toast_tap_more_to_pause">再点 2 次暂停任务</string>
+    <string name="toast_tap_n_more_format">再点 %1$d 次暂停任务</string>
+    <string name="dialog_stop_title">停止当前任务？</string>
+    <string name="dialog_stop_message_format">助手正在执行：%1$s</string>
+    <string name="dialog_btn_continue">继续执行</string>
+    <string name="dialog_btn_stop_task">停止任务</string>
+
+    <!-- Chat message contents -->
+    <string name="chat_status_started_format">任务开始：%1$s</string>
+    <string name="chat_status_interrupted">已由你手动停止</string>
+    <string name="chat_status_stalled">长时间无进展，已自动停止</string>
+    <string name="chat_status_error_stalled">连续多次请求失败，已自动停止</string>
+    <string name="chat_status_stopped">助手已停用，任务中止</string>
+    <string name="chat_result_default">任务完成</string>
+    <string name="chat_result_prefix_format">任务完成：%1$s</string>
+
+    <!-- Action descriptions (chat nodes + notification) -->
+    <string name="chat_action_tap_format">点击 (%1$d, %2$d)</string>
+    <string name="chat_action_long_press_format">长按 (%1$d, %2$d)</string>
+    <string name="chat_action_swipe_format">滑动 (%1$d, %2$d) → (%3$d, %4$d)</string>
+    <string name="chat_action_scroll_format">在 (%1$d, %2$d) 滚动</string>
+    <string name="chat_action_key_format">按键 %1$s</string>
+    <string name="chat_action_text_format">输入"%1$s"</string>
+    <string name="chat_action_wait_format">等待 %1$d 毫秒</string>
+
+    <!-- Status strings -->
+    <string name="status_running">运行中</string>
+    <string name="status_stopped">已停止</string>
+    <string name="status_enabled">已启用</string>
+    <string name="status_disabled">已停用</string>
+
+    <!-- Configuration strings -->
+    <string name="config_endpoint_label">LLM 接口地址</string>
+    <string name="config_endpoint_default">https://api.openai.com/v1/chat/completions</string>
+    <string name="config_model_label">模型</string>
+    <string name="config_model_default">gpt-4-vision-preview</string>
+    <string name="config_api_key_label">API 密钥</string>
+    <string name="config_capture_interval_label">截图间隔（毫秒）</string>
+    <string name="config_capture_interval_default">500</string>
+
+    <!-- Action strings -->
+    <string name="action_save">保存</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_test_connection">测试连接</string>
+    <string name="action_change">修改</string>
+    <string name="action_back_to_chat">返回聊天</string>
+
+    <!-- Toast messages -->
+    <string name="toast_service_enabled">AI 助手已启用</string>
+    <string name="toast_service_disabled">AI 助手已停用</string>
+    <string name="toast_testing_connection">正在测试连接…</string>
+    <string name="toast_connection_success">连接成功</string>
+    <string name="toast_connection_failed">连接失败</string>
+
+    <!-- Permission descriptions -->
+    <string name="permission_screen_capture">允许应用捕获屏幕内容用于 AI 分析</string>
+    <string name="permission_input_injection">允许应用模拟触摸和按键输入</string>
+    <string name="permission_internet">允许应用与 LLM 后端通信</string>
+</resources>

@@ -41,10 +41,18 @@ public class BootReceiver extends BroadcastReceiver {
             Log.i(TAG, "Assistant disabled; not starting on boot");
             return;
         }
+        // Only boot-start when a task was armed but not yet executed. Finished
+        // tasks are never re-run just because the device rebooted.
+        String state = ChatStore.getTaskState(context);
+        if (!ChatStore.STATE_PENDING.equals(state)) {
+            Log.i(TAG, "No pending task (state=" + state + "); not starting on boot");
+            return;
+        }
 
-        Log.i(TAG, "Device boot completed - starting service");
+        Log.i(TAG, "Device boot completed with pending task - starting service");
         try {
             Intent serviceIntent = new Intent(context, AIPhoneAssistantService.class);
+            serviceIntent.setAction(AIPhoneAssistantService.ACTION_ACTIVATE);
             context.startForegroundService(serviceIntent);
         } catch (Exception e) {
             Log.e(TAG, "Failed to start AI Phone Assistant service", e);

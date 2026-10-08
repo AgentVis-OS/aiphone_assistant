@@ -38,6 +38,10 @@
     <uses-permission android:name="android.permission.CAPTURE_SECURE_VIDEO_OUTPUT" />
     <uses-permission android:name="android.permission.READ_FRAME_BUFFER" />
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
+    <!-- The interrupt bar must sit ABOVE the status bar to receive touches
+         (TYPE_STATUS_BAR_ADDITIONAL); granted automatically to this
+         platform-signed app. -->
+    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
 
     <!-- Normal permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -78,18 +82,36 @@
             </intent-filter>
         </receiver>
 
-        <!-- Settings UI: endpoint, model, API key, task, capture interval -->
+        <!-- Main app surface: the conversation list (one task = one conversation) -->
         <activity
-            android:name=".SettingsActivity"
+            android:name=".ConversationListActivity"
             android:enabled="true"
             android:exported="true"
-            android:label="@string/settings_title"
+            android:label="@string/app_name"
             android:theme="@style/Theme.AIPhoneAssistant">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Read-only transcript of one conversation; opened from the list
+             or from task notifications. -->
+        <activity
+            android:name=".ChatActivity"
+            android:enabled="true"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.AIPhoneAssistant" />
+
+        <!-- Secondary UI: endpoint, model, API key, capture interval, task fallback.
+             Launched from the chat header (no launcher intent-filter anymore). -->
+        <activity
+            android:name=".SettingsActivity"
+            android:enabled="true"
+            android:exported="false"
+            android:label="@string/settings_title"
+            android:theme="@style/Theme.AIPhoneAssistant" />
 
     </application>
 </manifest>

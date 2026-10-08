@@ -26,6 +26,68 @@
     <string name="notification_channel_description">Runs AI assistant for screen analysis and input automation</string>
     <string name="notification_title">AI Phone Assistant</string>
     <string name="notification_text">AI assistant is running</string>
+    <string name="notification_starting">Starting…</string>
+    <string name="notification_task_title_format">Executing: %1$s</string>
+    <string name="notification_observing">Watching the screen for changes…</string>
+    <string name="notification_thinking">Thinking…</string>
+    <string name="notification_acting_format">%1$s</string>
+    <string name="notification_paused">Paused — waiting for your confirmation</string>
+
+    <!-- Task result notification channel -->
+    <string name="notification_channel_result_name">Task results</string>
+    <string name="notification_channel_result_description">Task completion, stop and stall notifications</string>
+    <string name="notification_result_done_title">Task completed</string>
+    <string name="notification_result_interrupted_title">Task stopped</string>
+    <string name="notification_result_stalled_title">Task stalled, stopped</string>
+
+    <!-- Chat UI -->
+    <string name="chat_subtitle_idle">Standby — send a task to activate</string>
+    <string name="chat_subtitle_executing_format">Executing: %1$s</string>
+    <string name="chat_subtitle_paused">Paused — confirm in the dialog on screen</string>
+    <string name="chat_input_hint">Describe a task, e.g. open the browser and search for the weather</string>
+    <string name="chat_input_disabled">Task in progress — the phone is busy</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_empty">No messages in this conversation.</string>
+    <string name="chat_screenshot_desc">Screenshot taken before this action</string>
+    <string name="back_to_list">Back to conversations</string>
+
+    <!-- Conversation list -->
+    <string name="conv_empty">No conversations yet.\nSend your first task below.</string>
+    <string name="conv_state_pending">Pending</string>
+    <string name="conv_state_executing">Executing</string>
+    <string name="conv_state_paused">Paused</string>
+    <string name="conv_state_done">Completed</string>
+    <string name="conv_state_stopped">Stopped</string>
+    <string name="conv_state_interrupted">Stopped by you</string>
+    <string name="conv_state_stalled">Stalled, stopped</string>
+    <string name="group_week_ago">Older than a week</string>
+    <string name="group_month_ago">Older than a month</string>
+
+    <!-- Interrupt bar + confirm dialog -->
+    <string name="toast_tap_more_to_pause">Tap 2 more times to pause the task</string>
+    <string name="toast_tap_n_more_format">Tap %1$d more times to pause the task</string>
+    <string name="dialog_stop_title">Stop the current task?</string>
+    <string name="dialog_stop_message_format">The assistant is executing: %1$s</string>
+    <string name="dialog_btn_continue">Keep going</string>
+    <string name="dialog_btn_stop_task">Stop task</string>
+
+    <!-- Chat message contents -->
+    <string name="chat_status_started_format">Task started: %1$s</string>
+    <string name="chat_status_interrupted">Stopped by you</string>
+    <string name="chat_status_stalled">No progress for a while, stopped automatically</string>
+    <string name="chat_status_error_stalled">Several consecutive request failures, stopped automatically</string>
+    <string name="chat_status_stopped">Assistant disabled — task stopped</string>
+    <string name="chat_result_default">Task completed</string>
+    <string name="chat_result_prefix_format">Task completed: %1$s</string>
+
+    <!-- Action descriptions (chat nodes + notification) -->
+    <string name="chat_action_tap_format">Tap (%1$d, %2$d)</string>
+    <string name="chat_action_long_press_format">Long-press (%1$d, %2$d)</string>
+    <string name="chat_action_swipe_format">Swipe (%1$d, %2$d) → (%3$d, %4$d)</string>
+    <string name="chat_action_scroll_format">Scroll at (%1$d, %2$d)</string>
+    <string name="chat_action_key_format">Key %1$s</string>
+    <string name="chat_action_text_format">Type \"%1$s\"</string>
+    <string name="chat_action_wait_format">Wait %1$d ms</string>
 
     <!-- Status strings -->
     <string name="status_running">Running</string>
@@ -47,6 +109,7 @@
     <string name="action_cancel">Cancel</string>
     <string name="action_test_connection">Test Connection</string>
     <string name="action_change">Change</string>
+    <string name="action_back_to_chat">Back to chat</string>
 
     <!-- Toast messages -->
     <string name="toast_service_enabled">AI Assistant enabled</string>

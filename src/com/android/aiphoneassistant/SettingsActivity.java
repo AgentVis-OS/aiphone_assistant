@@ -52,6 +52,7 @@ public class SettingsActivity extends Activity {
     private TextView mModelText;
     private TextView mApiKeyText;
     private TextView mIntervalText;
+    private ChatStore mStore;
 
     private LLMClientService mTestClient;
 
@@ -62,6 +63,7 @@ public class SettingsActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         mPrefs = LLMClientService.getPrefs(this);
+        mStore = new ChatStore(this);
         createUI();
     }
 
@@ -73,8 +75,12 @@ public class SettingsActivity extends Activity {
         TextView title = new TextView(this);
         title.setText(R.string.app_name);
         title.setTextSize(24);
-        title.setPadding(0, 0, 0, 32);
+        title.setPadding(0, 0, 0, 8);
         layout.addView(title);
+
+        // The chat is the main surface now; settings is secondary.
+        layout.addView(createButton(getString(R.string.action_back_to_chat), () -> finish()));
+        addSpacer(layout);
 
         // Enable/Disable switch
         LinearLayout enableLayout = new LinearLayout(this);
@@ -196,8 +202,22 @@ public class SettingsActivity extends Activity {
 
         Intent serviceIntent = new Intent(this, AIPhoneAssistantService.class);
         if (enabled) {
-            startForegroundService(serviceIntent);
+            // Arming alone does not run anything: only a pending task activates
+            // the assistant. The chat is the primary way to send one.
+            String state = ChatStore.getTaskState(this);
+            if (ChatStore.STATE_PENDING.equals(state)
+                    && !ChatStore.getTask(this).isEmpty()) {
+                serviceIntent.setAction(AIPhoneAssistantService.ACTION_ACTIVATE);
+                startForegroundService(serviceIntent);
+            }
         } else {
+            // Master off also aborts anything in flight or armed.
+            String state = ChatStore.getTaskState(this);
+            if (ChatStore.STATE_EXECUTING.equals(state)
+                    || ChatStore.STATE_PAUSED.equals(state)
+                    || ChatStore.STATE_PENDING.equals(state)) {
+                ChatStore.setTaskState(this, ChatStore.STATE_STOPPED);
+            }
             stopService(serviceIntent);
         }
     }
@@ -207,7 +227,7 @@ public class SettingsActivity extends Activity {
         builder.setTitle("Task");
         builder.setMessage("Describe what the assistant should do on the current screen, "
                 + "e.g. \"Open the browser and search for the weather\". "
-                + "Clear the text to make the assistant idle.");
+                + "Saving activates the assistant (the chat window is the primary entry).");
 
         EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
@@ -216,8 +236,16 @@ public class SettingsActivity extends Activity {
         builder.setView(input);
 
         builder.setPositiveButton(R.string.action_save, (dialog, which) -> {
-            mPrefs.edit().putString(LLMClientService.KEY_TASK,
-                    input.getText().toString().trim()).apply();
+            String task = input.getText().toString().trim();
+            if (!task.isEmpty()) {
+                mStore.createConversation(this, task);
+                ChatStore.addRecentTask(this, task);
+                if (mPrefs.getBoolean(LLMClientService.KEY_ENABLED, false)) {
+                    Intent serviceIntent = new Intent(this, AIPhoneAssistantService.class);
+                    serviceIntent.setAction(AIPhoneAssistantService.ACTION_ACTIVATE);
+                    startForegroundService(serviceIntent);
+                }
+            }
             updateDisplay();
         });
         builder.setNegativeButton(R.string.action_cancel, (dialog, which) -> dialog.cancel());

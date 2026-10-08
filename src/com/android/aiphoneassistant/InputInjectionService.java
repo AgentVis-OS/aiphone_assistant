@@ -51,9 +51,23 @@ public class InputInjectionService {
     private float mLastTouchY;
     private long mLastTouchTime;
 
+    // Set by the service when the user interrupts the task: gestures in
+    // progress are wound up as soon as possible (always still sending the
+    // closing ACTION_UP so no touch stays stuck down).
+    private volatile boolean mAborted = false;
+
     public InputInjectionService(AIPhoneAssistantService parent) {
         mParentService = parent;
         initialize();
+    }
+
+    /** Request that the gesture currently in progress is wound up. */
+    public void setAborted(boolean aborted) {
+        mAborted = aborted;
+    }
+
+    public boolean isAborted() {
+        return mAborted;
     }
 
     private void initialize() {
@@ -115,10 +129,12 @@ public class InputInjectionService {
     /**
      * Execute an input action from the LLM response. NONE is a no-op, WAIT
      * simply sleeps so the screen can settle before the next analysis.
+     * Returns false when the gesture was aborted mid-way by the user
+     * interrupt (the gesture is always closed with a final ACTION_UP).
      */
-    public void executeAction(InputAction action) {
-        if (action == null) {
-            return;
+    public boolean executeAction(InputAction action) {
+        if (action == null || mAborted) {
+            return false;
         }
 
         switch (action.type) {
@@ -126,8 +142,7 @@ public class InputInjectionService {
                 tap(action.x, action.y);
                 break;
             case SWIPE:
-                swipe(action.x, action.y, action.endX, action.endY, action.durationMs);
-                break;
+                return swipe(action.x, action.y, action.endX, action.endY, action.durationMs);
             case LONG_PRESS:
                 longPress(action.x, action.y, action.durationMs);
                 break;
@@ -142,13 +157,14 @@ public class InputInjectionService {
                 break;
             case WAIT:
                 Log.i(TAG, "Waiting " + action.durationMs + "ms for screen to settle");
-                sleep(action.durationMs);
+                sleepCancellable(action.durationMs);
                 break;
             case NONE:
             default:
                 Log.d(TAG, "No-op action: " + action.type);
                 break;
         }
+        return !mAborted;
     }
 
     private void injectMotionEvent(int action, float x, float y, long downTime) {
@@ -186,15 +202,21 @@ public class InputInjectionService {
         Log.i(TAG, "Tapping at (" + x + ", " + y + ")");
         long downTime = SystemClock.uptimeMillis();
         injectMotionEvent(MotionEvent.ACTION_DOWN, x, y, downTime);
-        sleep(50);
+        sleepCancellable(50);
         injectMotionEvent(MotionEvent.ACTION_UP, x, y, downTime);
         mLastTouchX = x;
         mLastTouchY = y;
         mLastTouchTime = downTime;
     }
 
-    /** Swipe gesture. */
-    public void swipe(float startX, float startY, float endX, float endY, long durationMs) {
+    /**
+     * Swipe gesture. When the abort flag is raised mid-gesture the swipe is
+     * wound up early, but the closing ACTION_UP is always injected so the
+     * system never keeps a touch stuck down.
+     *
+     * @return false when the gesture was aborted mid-way
+     */
+    public boolean swipe(float startX, float startY, float endX, float endY, long durationMs) {
         Log.i(TAG, "Swiping from (" + startX + ", " + startY + ") to (" + endX + ", " + endY + ")");
         long downTime = SystemClock.uptimeMillis();
         long steps = Math.max(1, durationMs / 50);
@@ -202,20 +224,23 @@ public class InputInjectionService {
         float dy = (endY - startY) / steps;
 
         injectMotionEvent(MotionEvent.ACTION_DOWN, startX, startY, downTime);
-        try {
-            for (int i = 1; i <= steps; i++) {
-                injectMotionEvent(MotionEvent.ACTION_MOVE, startX + dx * i, startY + dy * i,
-                        downTime);
-                Thread.sleep(50);
+        boolean aborted = false;
+        for (int i = 1; i <= steps; i++) {
+            if (sleepCancellable(50)) {
+                aborted = true;
+                break;
             }
-            injectMotionEvent(MotionEvent.ACTION_UP, endX, endY, downTime);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            injectMotionEvent(MotionEvent.ACTION_UP, endX, endY, downTime);
+            injectMotionEvent(MotionEvent.ACTION_MOVE, startX + dx * i, startY + dy * i,
+                    downTime);
         }
-        mLastTouchX = endX;
-        mLastTouchY = endY;
+        injectMotionEvent(MotionEvent.ACTION_UP, aborted ? mLastTouchX : endX,
+                aborted ? mLastTouchY : endY, downTime);
+        float lastX = aborted ? startX + dx * Math.max(0, steps - 1) : endX;
+        float lastY = aborted ? startY + dy * Math.max(0, steps - 1) : endY;
+        mLastTouchX = lastX;
+        mLastTouchY = lastY;
         mLastTouchTime = downTime;
+        return !aborted;
     }
 
     /** Long press. */
@@ -223,7 +248,7 @@ public class InputInjectionService {
         Log.i(TAG, "Long press at (" + x + ", " + y + ") for " + durationMs + "ms");
         long downTime = SystemClock.uptimeMillis();
         injectMotionEvent(MotionEvent.ACTION_DOWN, x, y, downTime);
-        sleep(durationMs);
+        sleepCancellable(durationMs);
         injectMotionEvent(MotionEvent.ACTION_UP, x, y, downTime);
         mLastTouchX = x;
         mLastTouchY = y;
@@ -235,7 +260,7 @@ public class InputInjectionService {
         Log.i(TAG, "Pressing key code: " + keyCode);
         long downTime = SystemClock.uptimeMillis();
         injectKeyEvent(KeyEvent.ACTION_DOWN, keyCode, downTime);
-        sleep(50);
+        sleepCancellable(50);
         injectKeyEvent(KeyEvent.ACTION_UP, keyCode, downTime);
     }
 
@@ -255,8 +280,13 @@ public class InputInjectionService {
             KeyEvent[] events = kcm.getEvents(text.toCharArray());
             if (events != null) {
                 for (KeyEvent event : events) {
+                    if (mAborted) {
+                        return;
+                    }
                     injectInputEvent(event);
-                    sleep(20);
+                    if (sleepCancellable(20)) {
+                        return;
+                    }
                 }
                 return;
             }
@@ -265,10 +295,15 @@ public class InputInjectionService {
         }
         // Fallback: basic A-Z, 0-9, space, enter
         for (char c : text.toCharArray()) {
+            if (mAborted) {
+                return;
+            }
             int keyCode = getKeyCodeForChar(c);
             if (keyCode != 0) {
                 keyPress(keyCode);
-                sleep(30);
+                if (sleepCancellable(30)) {
+                    return;
+                }
             }
         }
     }
@@ -279,11 +314,11 @@ public class InputInjectionService {
         long downTime = SystemClock.uptimeMillis();
         float endY = y + deltaY;
         injectMotionEvent(MotionEvent.ACTION_DOWN, x, y, downTime);
-        sleep(50);
+        sleepCancellable(50);
         injectMotionEvent(MotionEvent.ACTION_MOVE, x, y + deltaY / 2, downTime);
-        sleep(50);
+        sleepCancellable(50);
         injectMotionEvent(MotionEvent.ACTION_MOVE, x, endY, downTime);
-        sleep(50);
+        sleepCancellable(50);
         injectMotionEvent(MotionEvent.ACTION_UP, x, endY, downTime);
         mLastTouchX = x;
         mLastTouchY = endY;
@@ -316,6 +351,29 @@ public class InputInjectionService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * Like {@link #sleep(long)} but wakes up early when the abort flag is set
+     * or the thread is interrupted.
+     *
+     * @return true when the wait was cut short by the abort flag
+     */
+    private boolean sleepCancellable(long ms) {
+        long deadline = SystemClock.uptimeMillis() + ms;
+        while (!mAborted) {
+            long remaining = deadline - SystemClock.uptimeMillis();
+            if (remaining <= 0) {
+                return false;
+            }
+            try {
+                Thread.sleep(Math.min(remaining, 25));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return mAborted;
+            }
+        }
+        return true;
     }
 
     public float getLastTouchX() {

@@ -142,6 +142,18 @@ public class FrameChangeDetector {
     }
 
     /**
+     * Clear all learned state so the next frame re-bootstraps and escalates
+     * immediately. Used after the task was paused (the user may have interacted
+     * with the screen in the meantime).
+     */
+    public void reset() {
+        mBootstrapped = false;
+        mPrevThumb = null;
+        mLastAnalyzedThumb = null;
+        mConsecutiveStable = 0;
+    }
+
+    /**
      * Force an analysis of the given frame, bypassing the settle/change gating,
      * and reset the analysis baseline to it. Used by the stale-task watchdog in
      * {@link AIPhoneAssistantService}: when the model steers the screen back to

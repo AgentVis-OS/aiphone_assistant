@@ -21,7 +21,7 @@ if [ ! -f "$APK_PATH" ]; then
     echo "APK not found. Building first..."
     cd "$AOSP_ROOT"
     source build/envsetup.sh
-    lunch lineage_lmi-userdebug
+    lunch lineage_lmi-ap3a-userdebug
     m AIPhoneAssistant -j"$(nproc)"
 fi
 
