@@ -16,7 +16,7 @@
 -->
 <resources>
     <!-- Base application theme -->
-    <style name="Theme.AIPhoneAssistant" parent="@android:style/Theme.Material.Light.DarkActionBar">
+    <style name="Theme.AIPhoneAssistant" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:colorPrimary">@android:color/system_accent1_500</item>
         <item name="android:colorPrimaryDark">@android:color/system_accent1_700</item>
         <item name="android:colorAccent">@android:color/system_accent1_500</item>

@@ -143,6 +143,17 @@ public class SettingsActivity extends Activity {
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         scroll.addView(layout);
         setContentView(scroll);
+
+        // targetSdk 35 enforces edge-to-edge: without padding the first row
+        // (the enable switch) draws underneath the status bar and cannot be
+        // tapped on 1080x2400 screens.
+        scroll.setOnApplyWindowInsetsListener((v, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(
+                    android.view.WindowInsets.Type.systemBars()
+                            | android.view.WindowInsets.Type.displayCutout());
+            scroll.setPadding(0, bars.top, 0, bars.bottom);
+            return insets;
+        });
     }
 
     private String taskDisplayValue() {
