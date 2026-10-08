@@ -53,7 +53,11 @@ public class FrameChangeDetector {
     // Mean-absolute-difference thresholds, expressed as a percentage of the 0..255 range.
     private static final double STABLE_NOISE_FLOOR = 0.8;   // vs previous frame => "stable"
     private static final double SIGNIFICANT_CHANGE = 3.0;   // vs last analyzed => escalate
-    private static final int STABLE_FRAMES_REQUIRED = 3;    // consecutive stable frames => "settled"
+    // 5 consecutive stable frames (~2.5s at the 500ms interval): system window
+    // animations run 0.4-1s, and 3 frames was short enough that escalations
+    // fired on still-transitioning frames (the injected action then landed on
+    // a screen that was mid-animation and did nothing).
+    private static final int STABLE_FRAMES_REQUIRED = 5;    // consecutive stable frames => "settled"
 
     // Cooldowns.
     private static final long MIN_ANALYSIS_INTERVAL_MS = 1500;  // min gap between LLM calls
@@ -135,6 +139,28 @@ public class FrameChangeDetector {
     public void notifyActionInjected() {
         mLastActionTimeMs = System.currentTimeMillis();
         mConsecutiveStable = 0;
+    }
+
+    /**
+     * Force an analysis of the given frame, bypassing the settle/change gating,
+     * and reset the analysis baseline to it. Used by the stale-task watchdog in
+     * {@link AIPhoneAssistantService}: when the model steers the screen back to
+     * an already-analyzed state, the normal gating would never fire again and
+     * the task would stall forever.
+     */
+    public boolean forceAnalyze(Bitmap frame) {
+        if (frame == null) {
+            return false;
+        }
+        int[] thumb = toThumbnail(frame);
+        mPrevThumb = thumb;
+        mLastAnalyzedThumb = thumb;
+        mConsecutiveStable = STABLE_FRAMES_REQUIRED;
+        mLastAnalysisTimeMs = System.currentTimeMillis();
+        if (DEBUG) {
+            Log.d(TAG, "Forcing analysis (stale-task watchdog)");
+        }
+        return true;
     }
 
     /**

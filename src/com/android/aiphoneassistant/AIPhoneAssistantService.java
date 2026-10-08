@@ -64,6 +64,18 @@ public class AIPhoneAssistantService extends Service {
     // Only log the first of a run of consecutive capture failures
     private static final int CAPTURE_FAILURE_LOG_THRESHOLD = 3;
 
+    // Stale-task watchdog: when a task is configured but nothing has been
+    // escalated for STALE_TASK_REANALYZE_MS (e.g. the model returned the
+    // screen to an already-analyzed state), force a re-analysis so the model
+    // gets another chance. Bounded by MAX_FORCED_REANALYSES consecutive
+    // forced rounds: once the task is genuinely finished the assistant must
+    // stay quiet instead of re-prompting forever; a natural (change-driven)
+    // escalation refills the budget.
+    private static final long STALE_TASK_REANALYZE_MS = 20000;
+    private static final int MAX_FORCED_REANALYSES = 3;
+    private long mLastEscalationAtMs;
+    private int mForcedReanalyses = 0;
+
     private final IBinder mBinder = new AIPhoneAssistantBinder();
     private final AtomicBoolean mIsRunning = new AtomicBoolean(false);
     private final AtomicBoolean mAnalyzing = new AtomicBoolean(false);
@@ -111,6 +123,8 @@ public class AIPhoneAssistantService extends Service {
         startForeground(NOTIFICATION_ID, createNotification());
 
         if (mIsRunning.compareAndSet(false, true)) {
+            mLastEscalationAtMs = System.currentTimeMillis();
+            mForcedReanalyses = 0;
             mCaptureHandler.post(() -> mScreenCaptureService.initialize());
             mCaptureHandler.post(mCaptureRunnable);
         }
@@ -185,7 +199,26 @@ public class AIPhoneAssistantService extends Service {
 
                     if (screenshot != null) {
                         mConsecutiveCaptureFailures = 0;
-                        if (mFrameDetector.shouldAnalyze(screenshot)) {
+                        long now = System.currentTimeMillis();
+                        boolean stale = now - mLastEscalationAtMs >= STALE_TASK_REANALYZE_MS;
+                        boolean allowForce = stale && mForcedReanalyses < MAX_FORCED_REANALYSES;
+                        boolean escalate;
+                        if (allowForce) {
+                            escalate = mFrameDetector.forceAnalyze(screenshot);
+                            if (escalate) {
+                                mForcedReanalyses++;
+                                Log.i(TAG, "Stale-task watchdog: forcing re-analysis (#"
+                                        + mForcedReanalyses + ", no escalation for "
+                                        + sinceEscalationSeconds(mLastEscalationAtMs, now) + "s)");
+                            }
+                        } else {
+                            escalate = mFrameDetector.shouldAnalyze(screenshot);
+                            if (escalate) {
+                                // a natural change refills the watchdog budget
+                                mForcedReanalyses = 0;
+                            }
+                        }
+                        if (escalate) {
                             analyzeWithLLM(screenshot);
                         } else {
                             mAnalyzing.set(false);
@@ -312,7 +345,12 @@ public class AIPhoneAssistantService extends Service {
      * already set by the caller; it is cleared on completion (including
      * errors).
      */
+    private static long sinceEscalationSeconds(long lastEscalationAtMs, long now) {
+        return Math.max(0, (now - lastEscalationAtMs) / 1000);
+    }
+
     private void analyzeWithLLM(Bitmap screenshot) {
+        mLastEscalationAtMs = System.currentTimeMillis();
         if (mOverlayController != null) {
             mOverlayController.showThinking();
         }
