@@ -95,6 +95,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Full-screen screenshot viewer (pinch zoom, tap to close). -->
+        <activity
+            android:name=".ImagePreviewActivity"
+            android:enabled="true"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
         <!-- Read-only transcript of one conversation; opened from the list
              or from task notifications. -->
         <activity

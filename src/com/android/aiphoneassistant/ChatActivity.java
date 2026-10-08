@@ -272,9 +272,12 @@ public class ChatActivity extends Activity {
         if (fileName == null || fileName.isEmpty()) {
             view.setVisibility(View.GONE);
             view.setImageDrawable(null);
+            view.setOnClickListener(null);
             return;
         }
         view.setVisibility(View.VISIBLE);
+        view.setOnClickListener(v ->
+                startActivity(ImagePreviewActivity.intent(this, fileName)));
 
         Bitmap cached = mImageCache.get(fileName);
         if (cached != null) {
