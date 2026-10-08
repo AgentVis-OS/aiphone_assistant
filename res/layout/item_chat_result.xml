@@ -16,14 +16,14 @@
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:paddingBottom="6dp">
 
     <TextView
         android:id="@+id/chat_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="start"
-        android:layout_marginTop="6dp"
         android:maxWidth="280dp"
         android:background="@drawable/bg_bubble_result"
         android:paddingStart="15dp"
