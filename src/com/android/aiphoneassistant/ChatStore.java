@@ -280,6 +280,25 @@ public class ChatStore {
         return id;
     }
 
+    /**
+     * Close out conversations still marked executing/paused while the
+     * service is not running (e.g. after a frozen loop or force-stop):
+     * marks them "stopped" so the list does not show ghost badges.
+     */
+    public static void reconcileStaleStates(Context context, boolean serviceRunning) {
+        if (serviceRunning) {
+            return;
+        }
+        getPrefs(context); // ensure prefs exist before touching the DB
+        ContentValues values = new ContentValues();
+        values.put("state", STATE_STOPPED);
+        values.put("updated_ts", System.currentTimeMillis());
+        DbHelper.get(context).getWritableDatabase().update(
+                "conversations", values,
+                "state IN (?, ?)",
+                new String[]{STATE_EXECUTING, STATE_PAUSED});
+    }
+
     /** All conversations, newest first. */
     public List<Conversation> listConversations() {
         List<Conversation> result = new ArrayList<>();

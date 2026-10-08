@@ -15,18 +15,18 @@
      limitations under the License.
 -->
 <resources>
-    <!-- Base application theme -->
+    <!-- Light theme: Material You dynamic colors from the wallpaper palette. -->
     <style name="Theme.AIPhoneAssistant" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:colorPrimary">@android:color/system_accent1_500</item>
         <item name="android:colorPrimaryDark">@android:color/system_accent1_700</item>
         <item name="android:colorAccent">@android:color/system_accent1_500</item>
         <item name="android:windowBackground">@android:color/system_neutral1_50</item>
-    </style>
-
-    <!-- Dark theme variant -->
-    <style name="Theme.AIPhoneAssistant.Dark" parent="@android:style/Theme.Material">
-        <item name="android:colorPrimary">@android:color/system_accent1_200</item>
-        <item name="android:colorPrimaryDark">@android:color/system_accent1_500</item>
-        <item name="android:colorAccent">@android:color/system_accent1_200</item>
+        <item name="android:textColorPrimary">@android:color/system_neutral1_900</item>
+        <item name="android:textColorSecondary">@android:color/system_neutral1_500</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="surfaceColor">@android:color/system_neutral1_100</item>
+        <item name="surfaceVariantColor">@android:color/system_accent1_100</item>
+        <item name="accentColor">@android:color/system_accent1_500</item>
+        <item name="onAccentColor">@android:color/white</item>
     </style>
 </resources>

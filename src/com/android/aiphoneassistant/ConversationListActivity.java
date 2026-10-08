@@ -30,7 +30,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -68,7 +68,7 @@ public class ConversationListActivity extends Activity {
     private TextView mEmptyView;
     private TextView mSubtitle;
     private EditText mInput;
-    private Button mSend;
+    private ImageButton mSend;
     private View mChipsScroll;
     private LinearLayout mChipsRow;
 
@@ -166,6 +166,7 @@ public class ConversationListActivity extends Activity {
     }
 
     private void refresh() {
+        ChatStore.reconcileStaleStates(this, AIPhoneAssistantService.isRunning());
         mConversations = mStore.listConversations();
         rebuildRows();
         mAdapter.notifyDataSetChanged();
@@ -381,35 +382,42 @@ public class ConversationListActivity extends Activity {
             }
 
             ChatStore.Conversation conv = row.conv;
-            TextView title;
-            TextView state;
-            TextView summary;
-            TextView time;
             if (view == null) {
                 view = LayoutInflater.from(ConversationListActivity.this).inflate(
                         R.layout.item_conversation, parent, false);
             }
-            title = view.findViewById(R.id.conv_row_title);
-            state = view.findViewById(R.id.conv_row_state);
-            summary = view.findViewById(R.id.conv_row_summary);
-            time = view.findViewById(R.id.conv_row_time);
+            TextView avatar = view.findViewById(R.id.conv_avatar);
+            TextView title = view.findViewById(R.id.conv_row_title);
+            TextView state = view.findViewById(R.id.conv_row_state);
+            TextView summary = view.findViewById(R.id.conv_row_summary);
+            TextView time = view.findViewById(R.id.conv_row_time);
 
-            title.setText(conv.task);
-            state.setText(ChatStore.stateLabel(ConversationListActivity.this, conv.state));
-            state.setTextColor(stateColor(conv.state));
+            String task = conv.task != null ? conv.task : "";
+            avatar.setText(task.isEmpty() ? "✦"
+                    : task.substring(0, 1).toUpperCase());
+            title.setText(task);
             summary.setText(conv.summary != null ? conv.summary : "");
+            summary.setVisibility(
+                    conv.summary != null && !conv.summary.isEmpty()
+                            ? View.VISIBLE : View.GONE);
             time.setText(ChatStore.relativeTime(conv.updatedTs));
+
+            int stateColor = stateColor(conv.state);
+            state.setText(ChatStore.stateLabel(ConversationListActivity.this, conv.state));
+            state.setTextColor(stateColor);
+            state.getBackground().mutate().setTint(
+                    (stateColor & 0x00FFFFFF) | (31 << 24));
             view.setOnClickListener(v ->
                     startActivity(ChatActivity.intent(ConversationListActivity.this, conv.id)));
             return view;
         }
 
         private int stateColor(String state) {
-            if (ChatStore.STATE_EXECUTING.equals(state)) return 0xFF1976D2;
-            if (ChatStore.STATE_PAUSED.equals(state)) return 0xFFE65100;
-            if (ChatStore.STATE_DONE.equals(state)) return 0xFF2E7D32;
-            if (ChatStore.STATE_STALLED.equals(state)) return 0xFFD93025;
-            return 0xFF8A8A8A;
+            if (ChatStore.STATE_EXECUTING.equals(state)) return 0xFF1E88E5;
+            if (ChatStore.STATE_PAUSED.equals(state)) return 0xFFFB8C00;
+            if (ChatStore.STATE_DONE.equals(state)) return 0xFF2E9E4F;
+            if (ChatStore.STATE_STALLED.equals(state)) return 0xFFE5484D;
+            return 0xFF8A8F99;
         }
     }
 }

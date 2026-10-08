@@ -25,10 +25,11 @@
 
     <ImageView
         android:id="@+id/chat_image"
-        android:layout_width="96dp"
-        android:layout_height="96dp"
+        android:layout_width="88dp"
+        android:layout_height="88dp"
         android:scaleType="centerCrop"
-        android:background="#11000000"
+        android:clipToOutline="true"
+        android:background="@drawable/bg_thumb"
         android:contentDescription="@string/chat_screenshot_desc" />
 
     <TextView

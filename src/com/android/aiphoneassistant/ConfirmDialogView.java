@@ -20,8 +20,8 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -33,6 +33,7 @@ import android.widget.TextView;
  * untouched underneath. Shown after the interrupt gesture: "continue or stop
  * the current task?".
  *
+ * Colors follow the app theme (Material You dynamic palette, day/night).
  * The window hosting this view is non-focusable; buttons work purely via
  * touch.
  */
@@ -48,42 +49,53 @@ public class ConfirmDialogView extends FrameLayout {
         void onStopConfirmed();
     }
 
+    /** Resolve a theme attribute color on the given context. */
+    private static int themeColor(Context context, int attr) {
+        TypedValue value = new TypedValue();
+        context.getTheme().resolveAttribute(attr, value, true);
+        return value.data;
+    }
+
     public ConfirmDialogView(Context context, String taskText, Listener listener) {
         super(context);
         float density = context.getResources().getDisplayMetrics().density;
-        int pad = (int) (24 * density);
+
+        int surfaceColor = themeColor(context, R.attr.surfaceColor);
+        int accentColor = themeColor(context, R.attr.accentColor);
+        int primaryText = themeColor(context, android.R.attr.textColorPrimary);
+        int secondaryText = themeColor(context, android.R.attr.textColorSecondary);
 
         // Full-screen dim; clickable so touches are consumed, never forwarded.
-        setBackgroundColor(0x99000000);
+        setBackgroundColor(0x88000000);
         setClickable(true);
 
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable cardBg = new GradientDrawable();
-        cardBg.setColor(Color.WHITE);
-        cardBg.setCornerRadius(24 * density);
+        cardBg.setColor(surfaceColor);
+        cardBg.setCornerRadius(26 * density);
         card.setBackground(cardBg);
         int cardPad = (int) (24 * density);
         card.setPadding(cardPad, cardPad, cardPad, cardPad);
 
         LayoutParams cardParams = new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        cardParams.leftMargin = pad * 2;
-        cardParams.rightMargin = pad * 2;
+        cardParams.leftMargin = (int) (40 * density);
+        cardParams.rightMargin = (int) (40 * density);
         cardParams.gravity = Gravity.CENTER;
 
         TextView title = new TextView(context);
         title.setText(R.string.dialog_stop_title);
         title.setTextSize(19);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setTextColor(Color.parseColor("#DE000000"));
+        title.setTextColor(primaryText);
         card.addView(title);
 
         if (taskText != null && !taskText.isEmpty()) {
             TextView message = new TextView(context);
             message.setText(context.getString(R.string.dialog_stop_message_format, taskText));
             message.setTextSize(14);
-            message.setTextColor(Color.parseColor("#8A000000"));
+            message.setTextColor(secondaryText);
             message.setPadding(0, (int) (10 * density), 0, 0);
             card.addView(message);
         }
@@ -97,6 +109,9 @@ public class ConfirmDialogView extends FrameLayout {
 
         Button cont = new Button(context);
         cont.setText(R.string.dialog_btn_continue);
+        cont.setAllCaps(false);
+        cont.setTextColor(accentColor);
+        cont.setBackgroundColor(Color.TRANSPARENT);
         cont.setOnClickListener(v -> {
             if (listener != null) {
                 listener.onContinue();
@@ -109,7 +124,9 @@ public class ConfirmDialogView extends FrameLayout {
 
         Button stop = new Button(context);
         stop.setText(R.string.dialog_btn_stop_task);
-        stop.setTextColor(Color.parseColor("#D93025"));
+        stop.setAllCaps(false);
+        stop.setTextColor(Color.parseColor("#E5484D"));
+        stop.setBackgroundColor(Color.TRANSPARENT);
         stop.setOnClickListener(v -> {
             if (listener != null) {
                 listener.onStopConfirmed();

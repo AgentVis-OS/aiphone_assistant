@@ -24,13 +24,13 @@
         android:layout_height="wrap_content"
         android:layout_gravity="end"
         android:layout_marginTop="6dp"
-        android:maxWidth="270dp"
+        android:maxWidth="280dp"
         android:background="@drawable/bg_bubble_user"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
+        android:paddingStart="15dp"
+        android:paddingEnd="15dp"
         android:paddingTop="10dp"
         android:paddingBottom="10dp"
-        android:textColor="#FFFFFF"
+        android:textColor="?attr/onAccentColor"
         android:textSize="15sp"
         android:autoLink="none" />
 </FrameLayout>
