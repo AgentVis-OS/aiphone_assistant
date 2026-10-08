@@ -53,11 +53,18 @@ public class ImagePreviewActivity extends Activity {
         final ImageView image = findViewById(R.id.preview_image);
         final ProgressBar progress = findViewById(R.id.preview_progress);
 
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
+
         if (name == null || name.isEmpty()) {
             finish();
             return;
         }
-        image.setOnClickListener(v -> finish());
+        View.OnClickListener close = v -> {
+            finish();
+            overridePendingTransition(0, android.R.anim.fade_out);
+        };
+        image.setOnClickListener(close);
+        findViewById(R.id.preview_close).setOnClickListener(close);
 
         // Decode off the UI thread; the blob is a small JPEG (~100 KB).
         new Thread(() -> {

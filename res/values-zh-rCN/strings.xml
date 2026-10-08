@@ -122,4 +122,6 @@
     <string name="permission_screen_capture">允许应用捕获屏幕内容用于 AI 分析</string>
     <string name="permission_input_injection">允许应用模拟触摸和按键输入</string>
     <string name="permission_internet">允许应用与 LLM 后端通信</string>
+    <string name="preview_title">截图预览</string>
+    <string name="action_close">关闭</string>
 </resources>

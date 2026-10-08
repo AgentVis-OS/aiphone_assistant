@@ -122,4 +122,6 @@
     <string name="permission_screen_capture">Allows the app to capture screen content for AI analysis</string>
     <string name="permission_input_injection">Allows the app to simulate touch and key input</string>
     <string name="permission_internet">Allows the app to communicate with LLM backend</string>
+    <string name="preview_title">Screenshot preview</string>
+    <string name="action_close">Close</string>
 </resources>
