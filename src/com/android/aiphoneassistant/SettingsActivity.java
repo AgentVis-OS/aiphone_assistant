@@ -152,7 +152,7 @@ public class SettingsActivity extends Activity {
 
         // targetSdk 35 enforces edge-to-edge: without padding the first row
         // (the enable switch) draws underneath the status bar and cannot be
-        // tapped on 1080x2400 screens.
+        // tapped at the bottom of the screen.
         scroll.setOnApplyWindowInsetsListener((v, insets) -> {
             android.graphics.Insets bars = insets.getInsets(
                     android.view.WindowInsets.Type.systemBars()

@@ -430,9 +430,19 @@ public class AIPhoneAssistantService extends Service {
         mCaptureHandler.removeCallbacks(mAnalyzeTimeout);
         mCaptureHandler.postDelayed(mAnalyzeTimeout, ANALYZE_TIMEOUT_MS);
 
+        // captureDisplay returns the screen at native resolution, so when the
+        // display metrics are unknown the screenshot's own size is the
+        // correct mapping target (scale = 1).
+        int screenW = mScreenCaptureService.getDisplayWidth();
+        int screenH = mScreenCaptureService.getDisplayHeight();
+        if (screenW <= 0 || screenH <= 0) {
+            screenW = screenshot.getWidth();
+            screenH = screenshot.getHeight();
+        }
+
         mLLMClientService.analyzeScreen(screenshot,
-                mScreenCaptureService.getDisplayWidth(),
-                mScreenCaptureService.getDisplayHeight(),
+                screenW,
+                screenH,
                 mCurrentTask,
                 recentActionHistory(),
                 new LLMClientService.LLMCallback() {

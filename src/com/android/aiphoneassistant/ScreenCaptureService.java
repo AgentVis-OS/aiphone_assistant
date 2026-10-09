@@ -48,10 +48,10 @@ public class ScreenCaptureService {
     private final AIPhoneAssistantService mParentService;
     private boolean mInitialized = false;
 
-    // Display info
-    private int mDisplayWidth = 1080;
-    private int mDisplayHeight = 2400;
-    private int mDisplayDensityDpi = 440;
+    // Display info (filled in by initialize(); 0 = unknown)
+    private int mDisplayWidth = 0;
+    private int mDisplayHeight = 0;
+    private int mDisplayDensityDpi = 0;
 
     public ScreenCaptureService(AIPhoneAssistantService parent) {
         mParentService = parent;
