@@ -129,7 +129,9 @@ public class LLMClientService {
         }
 
         mCancelled.set(false);
-        mExecutor.execute(() -> {
+        // A dedicated thread per request: a hung gateway response must never
+        // block later analysis rounds (the single-thread executor would).
+        Thread t = new Thread(() -> {
             try {
                 Bitmap scaled = scaleBitmap(screenshot);
                 String imageBase64 = bitmapToBase64(scaled);

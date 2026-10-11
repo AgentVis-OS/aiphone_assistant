@@ -489,13 +489,24 @@ public class AIPhoneAssistantService extends Service {
         mCaptureHandler.removeCallbacks(mAnalyzeTimeout);
     }
 
-    /** Abort the in-flight LLM request when one round exceeds the hard bound. */
+    /** Abort the in-flight LLM request when one round exceeds the hard bound;
+     *  a bit later, force-recover the loop in case even the cancel stalls. */
     private final Runnable mAnalyzeTimeout = new Runnable() {
         @Override
         public void run() {
-            if (mAnalyzing.get() && mIsRunning.get()) {
+            if (!mIsRunning.get()) {
+                return;
+            }
+            if (mAnalyzing.get()) {
                 Log.w(TAG, "LLM round exceeded " + ANALYZE_TIMEOUT_MS + " ms; aborting");
                 mLLMClientService.cancelInFlight();
+                mCaptureHandler.postDelayed(() -> {
+                    if (mAnalyzing.get() && mIsRunning.get()) {
+                        Log.w(TAG, "LLM round still stuck; force-recovering loop");
+                        endAnalyzeRound();
+                        mAnalyzing.set(false);
+                    }
+                }, ANALYZE_TIMEOUT_MS + 15000);
             }
         }
     };
