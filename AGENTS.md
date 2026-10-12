@@ -1,12 +1,12 @@
 # AGENTS.md — rules for coding agents in this repo
 
-## Builds: ALWAYS prefer the incremental repack over a full Soong build
+## Builds: ALWAYS prefer the incremental repack; full build only once
 
-A full Soong build (`build.sh`, or `m AIPhoneAssistant` in the LineageOS tree)
-spends 15–30+ minutes in single-threaded Soong analysis and thrashes swap on
-this machine (observed 2026-10-12: 25 min, no output, 17 GB in swap). Do NOT
-run it for day-to-day iteration. Use the incremental pipeline below instead —
-it takes ~2 minutes end to end and was verified on 2026-10-12.
+Incremental builds whenever possible. The full Soong build is a **one-time
+bootstrap**: it produces the framework jars, host tools and previous APK that
+the incremental pipeline consumes. Once `out/` has a successful build, iterate
+with the incremental pipeline below — it takes ~2 minutes end to end and was
+verified on 2026-10-12.
 
 ### Java-only changes (the common case)
 
@@ -59,16 +59,16 @@ tree has one previous successful build (the APK and intermediates under
 The repack reuses the previous APK's resources, so resource edits need one
 extra step: regenerate the resource base with
 `aapt2 compile --dir res -o res.zip` and
-`aapt2 link -I $TREE/out/target/product/lmi/system/framework/framework-res.apk
+`aapt2 link -I $TREE/out/target/product/lmi/obj/APPS/framework-res_intermediates/package.apk
 --manifest AndroidManifest.xml --java gen res.zip` (not yet exercised — do it
 when first needed, then repack as above). `--java` R.java feeds step 1.
 
-### When a full build IS appropriate
+### When a full build is needed
 
-Only when: the user explicitly asks; `Android.bp` / sepolicy / device
-integration changed; or the previous build's intermediates are gone. Run
-`build.sh <tree> lineage_lmi-ap3a-userdebug` in the background and warn the
-user it can take 30+ minutes on this machine.
+Only when: it is the first build in the tree (no previous `out/` artifacts to
+reuse); `Android.bp` / sepolicy / device integration changed; or the user
+explicitly asks. Run `build.sh <tree> lineage_lmi-ap3a-userdebug` in the
+background and continue with other work until it finishes.
 
 ## Device notes
 
