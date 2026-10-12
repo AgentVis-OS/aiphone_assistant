@@ -166,6 +166,8 @@ public class LLMClientService {
                 });
             }
         });
+        t.setName("llm-analyze");
+        t.start();
     }
 
     /**
@@ -317,7 +319,7 @@ public class LLMClientService {
             requestBody.put("messages", messages);
             // Generous budget: reasoning models spend tokens on the hidden
             // chain-of-thought before the JSON answer.
-            requestBody.put("max_tokens", 2000);
+            requestBody.put("max_tokens", 4096);
             // Stream (SSE): reasoning models can think for minutes at high
             // max_tokens; a non-streaming POST would sit with zero bytes and
             // get cut by intermediate proxies. Deltas accumulate in
@@ -330,6 +332,11 @@ public class LLMClientService {
         HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
         mInFlight.set(connection);
         try {
+            long t0 = android.os.SystemClock.elapsedRealtime();
+            java.net.InetAddress[] addrs = java.net.InetAddress.getAllByName(
+                    new URL(endpoint).getHost());
+            Log.i(TAG, "DNS: " + new URL(endpoint).getHost() + " -> "
+                    + java.util.Arrays.toString(addrs));
             connection.setRequestMethod("POST");
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
@@ -346,6 +353,8 @@ public class LLMClientService {
             }
 
             int responseCode = connection.getResponseCode();
+            Log.i(TAG, "HTTP response " + responseCode + " after "
+                    + (android.os.SystemClock.elapsedRealtime() - t0) + " ms");
             if (responseCode != HttpURLConnection.HTTP_OK) {
                 String error = readStream(connection.getErrorStream());
                 throw new IOException("HTTP " + responseCode + " "
@@ -369,6 +378,7 @@ public class LLMClientService {
      * models that never emit a final content delta).
      */
     private String readStreamSSE(HttpURLConnection connection) throws IOException {
+        long t0 = android.os.SystemClock.elapsedRealtime();
         StringBuilder content = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
         boolean gotAnything = false;
@@ -382,7 +392,9 @@ public class LLMClientService {
                 String data = line.substring(5).trim();
                 if (!gotAnything) {
                     gotAnything = true;
-                    Log.i(TAG, "First stream chunk received");
+                    Log.i(TAG, "First stream line after "
+                            + (android.os.SystemClock.elapsedRealtime() - t0)
+                            + " ms: " + line);
                 }
                 if (data.equals("[DONE]")) {
                     break;

@@ -102,7 +102,7 @@ public class AIPhoneAssistantService extends Service {
     // Hard bound for one LLM round. Slow-dripping responses can evade the
     // HTTP read timeout; without this the loop would freeze forever with
     // mAnalyzing stuck true (the watchdog lives inside the skipped block).
-    private static final long ANALYZE_TIMEOUT_MS = 45000;
+    private static final long ANALYZE_TIMEOUT_MS = 300000;
     // How many recent actions are included in the prompt
     private static final int PROMPT_ACTION_HISTORY = 8;
     private static final int TASK_TITLE_MAX_LEN = 40;
@@ -566,6 +566,12 @@ public class AIPhoneAssistantService extends Service {
             }
 
             mFrameDetector.notifyActionInjected();
+            // An executed action is real progress: refill the watchdog
+            // budget so typing-heavy tasks (small on-screen deltas) are not
+            // starved of re-analyses. Only forced rounds that yield NO
+            // action consecutively may exhaust it into a stall.
+            mForcedReanalyses = 0;
+            mForcedRound = false;
             if (decision.action.type != InputInjectionService.ActionType.WAIT) {
                 mActionHistory.add(desc);
                 mChatStore.appendAction(mConvId, desc, mCurrentFrame);
