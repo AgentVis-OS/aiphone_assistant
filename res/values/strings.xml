@@ -62,6 +62,10 @@
     <string name="conv_state_stalled">Stalled, stopped</string>
     <string name="group_week_ago">Older than a week</string>
     <string name="group_month_ago">Older than a month</string>
+    <string name="group_archived">Archived</string>
+    <string name="conv_archive">Archive</string>
+    <string name="conv_unarchive">Unarchive</string>
+    <string name="toast_cannot_archive_active">The running conversation cannot be archived</string>
 
     <!-- Interrupt bar + confirm dialog -->
     <string name="toast_tap_more_to_pause">Tap 2 more times to pause the task</string>

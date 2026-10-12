@@ -102,7 +102,7 @@ public class AIPhoneAssistantService extends Service {
     // Hard bound for one LLM round. Slow-dripping responses can evade the
     // HTTP read timeout; without this the loop would freeze forever with
     // mAnalyzing stuck true (the watchdog lives inside the skipped block).
-    private static final long ANALYZE_TIMEOUT_MS = 90000;
+    private static final long ANALYZE_TIMEOUT_MS = 45000;
     // How many recent actions are included in the prompt
     private static final int PROMPT_ACTION_HISTORY = 8;
     private static final int TASK_TITLE_MAX_LEN = 40;

@@ -317,7 +317,12 @@ public class LLMClientService {
             requestBody.put("messages", messages);
             // Generous budget: reasoning models spend tokens on the hidden
             // chain-of-thought before the JSON answer.
-            requestBody.put("max_tokens", 8192);
+            requestBody.put("max_tokens", 2000);
+            // Stream (SSE): reasoning models can think for minutes at high
+            // max_tokens; a non-streaming POST would sit with zero bytes and
+            // get cut by intermediate proxies. Deltas accumulate in
+            // readStreamSSE below.
+            requestBody.put("stream", true);
         } catch (JSONException e) {
             throw new IOException("Failed to build request", e);
         }
@@ -347,35 +352,66 @@ public class LLMClientService {
                         + shorten(error.isEmpty() ? connection.getResponseMessage() : error, 300));
             }
 
-            String responseBody = readStream(connection.getInputStream());
-            try {
-                JSONObject jsonResponse = new JSONObject(responseBody);
-                JSONArray choices = jsonResponse.getJSONArray("choices");
-                if (choices.length() == 0) {
-                    throw new IOException("Empty choices in LLM response");
-                }
-                JSONObject message = choices.getJSONObject(0).getJSONObject("message");
-                String content = message.optString("content", "").trim();
-                if (content.isEmpty()) {
-                    // Reasoning models can spend their whole budget on the
-                    // chain-of-thought field; the JSON is often in there.
-                    content = message.optString("reasoning_content", "").trim();
-                    if (!content.isEmpty()) {
-                        Log.i(TAG, "Empty content; falling back to reasoning_content");
-                    }
-                }
-                if (content.isEmpty()) {
-                    throw new IOException("Empty response from model");
-                }
-                return content;
-            } catch (JSONException e) {
-                throw new IOException("Failed to parse LLM response: "
-                        + shorten(responseBody, 200), e);
+            String content = readStreamSSE(connection);
+            if (content.trim().isEmpty()) {
+                throw new IOException("Empty streamed response from model");
             }
+            return content;
         } finally {
             mInFlight.compareAndSet(connection, null);
             connection.disconnect();
         }
+    }
+
+    /**
+     * Consume an OpenAI-compatible SSE stream, returning the concatenated
+     * answer (content, falling back to the reasoning field for thinking
+     * models that never emit a final content delta).
+     */
+    private String readStreamSSE(HttpURLConnection connection) throws IOException {
+        StringBuilder content = new StringBuilder();
+        StringBuilder reasoning = new StringBuilder();
+        boolean gotAnything = false;
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.startsWith("data:")) {
+                    continue;
+                }
+                String data = line.substring(5).trim();
+                if (!gotAnything) {
+                    gotAnything = true;
+                    Log.i(TAG, "First stream chunk received");
+                }
+                if (data.equals("[DONE]")) {
+                    break;
+                }
+                try {
+                    JSONObject chunk = new JSONObject(data);
+                    JSONArray choices = chunk.optJSONArray("choices");
+                    if (choices == null || choices.length() == 0) {
+                        continue;
+                    }
+                    JSONObject delta = choices.getJSONObject(0).optJSONObject("delta");
+                    if (delta == null) {
+                        continue;
+                    }
+                    content.append(delta.optString("content", ""));
+                    reasoning.append(delta.optString("reasoning_content", ""));
+                } catch (JSONException ignored) {
+                    // keep-alive comments / partial lines
+                }
+            }
+        }
+        String answer = content.toString().trim();
+        if (answer.isEmpty()) {
+            answer = reasoning.toString().trim();
+            if (!answer.isEmpty()) {
+                Log.i(TAG, "Empty content; falling back to reasoning_content");
+            }
+        }
+        return answer;
     }
 
     private String readStream(InputStream inputStream) throws IOException {

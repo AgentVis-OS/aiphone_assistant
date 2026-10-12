@@ -111,6 +111,7 @@ public class ChatStore {
         public long startedTs;
         public long updatedTs;
         public String summary; // last appended message text (list preview)
+        public boolean archived;
     }
 
     /** Process-wide database helper (SQLiteOpenHelper is thread-safe). */
@@ -129,7 +130,7 @@ public class ChatStore {
         }
 
         private DbHelper(Context context) {
-            super(context.getApplicationContext(), "chat.db", null, 2);
+            super(context.getApplicationContext(), "chat.db", null, 3);
         }
 
         @Override
@@ -140,7 +141,8 @@ public class ChatStore {
                     + "state TEXT NOT NULL, "
                     + "started_ts INTEGER NOT NULL, "
                     + "updated_ts INTEGER NOT NULL, "
-                    + "summary TEXT)");
+                    + "summary TEXT, "
+                    + "archived INTEGER NOT NULL DEFAULT 0)");
             db.execSQL("CREATE TABLE messages ("
                     + "conv_id INTEGER NOT NULL, "
                     + "id INTEGER NOT NULL, "
@@ -159,6 +161,11 @@ public class ChatStore {
             if (oldVersion < 2) {
                 // v2: screenshots moved from files into the images table.
                 createImagesTable(db);
+            }
+            if (oldVersion < 3) {
+                // v3: conversation archiving.
+                db.execSQL("ALTER TABLE conversations ADD COLUMN "
+                        + "archived INTEGER NOT NULL DEFAULT 0");
             }
         }
 
@@ -313,6 +320,7 @@ public class ChatStore {
                 conv.startedTs = c.getLong(c.getColumnIndexOrThrow("started_ts"));
                 conv.updatedTs = c.getLong(c.getColumnIndexOrThrow("updated_ts"));
                 conv.summary = c.getString(c.getColumnIndexOrThrow("summary"));
+                conv.archived = c.getInt(c.getColumnIndexOrThrow("archived")) != 0;
                 result.add(conv);
             }
         } finally {
@@ -336,6 +344,7 @@ public class ChatStore {
             conv.startedTs = c.getLong(c.getColumnIndexOrThrow("started_ts"));
             conv.updatedTs = c.getLong(c.getColumnIndexOrThrow("updated_ts"));
             conv.summary = c.getString(c.getColumnIndexOrThrow("summary"));
+            conv.archived = c.getInt(c.getColumnIndexOrThrow("archived")) != 0;
             return conv;
         } finally {
             c.close();
@@ -350,6 +359,14 @@ public class ChatStore {
         if (summary != null && !summary.isEmpty()) {
             values.put("summary", summary);
         }
+        mDb.getWritableDatabase().update("conversations", values,
+                "id=?", new String[]{String.valueOf(id)});
+    }
+
+    /** Archive or unarchive a conversation. */
+    public void setArchived(long id, boolean archived) {
+        ContentValues values = new ContentValues();
+        values.put("archived", archived ? 1 : 0);
         mDb.getWritableDatabase().update("conversations", values,
                 "id=?", new String[]{String.valueOf(id)});
     }

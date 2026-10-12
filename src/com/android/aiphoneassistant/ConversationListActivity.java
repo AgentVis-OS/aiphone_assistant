@@ -60,6 +60,7 @@ public class ConversationListActivity extends Activity {
 
     private static final String GROUP_KEY_WEEK = "week";
     private static final String GROUP_KEY_MONTH = "month";
+    private static final String GROUP_KEY_ARCHIVED = "archived";
 
     private ChatStore mStore;
     private ConversationAdapter mAdapter;
@@ -185,7 +186,12 @@ public class ConversationListActivity extends Activity {
         List<ChatStore.Conversation> recent = new java.util.ArrayList<>();
         List<ChatStore.Conversation> week = new java.util.ArrayList<>();
         List<ChatStore.Conversation> month = new java.util.ArrayList<>();
+        List<ChatStore.Conversation> archived = new java.util.ArrayList<>();
         for (ChatStore.Conversation c : mConversations) {
+            if (c.archived) {
+                archived.add(c);
+                continue;
+            }
             long age = now - c.startedTs;
             if (age < GROUP1_THRESHOLD_MS) {
                 recent.add(c);
@@ -204,6 +210,7 @@ public class ConversationListActivity extends Activity {
         }
         appendGroup(rows, GROUP_KEY_WEEK, R.string.group_week_ago, week);
         appendGroup(rows, GROUP_KEY_MONTH, R.string.group_month_ago, month);
+        appendGroup(rows, GROUP_KEY_ARCHIVED, R.string.group_archived, archived);
         mRows = rows;
     }
 
@@ -228,6 +235,28 @@ public class ConversationListActivity extends Activity {
                 rows.add(r);
             }
         }
+    }
+
+    /** Long-press action: archive (or unarchive) a conversation. */
+    private void confirmArchive(ChatStore.Conversation conv) {
+        if (isExecuting()
+                && conv.id == ChatStore.getCurrentConvId(this)) {
+            Toast.makeText(this, R.string.toast_cannot_archive_active,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String label = conv.archived
+                ? getString(R.string.conv_unarchive)
+                : getString(R.string.conv_archive);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(conv.task)
+                .setMessage(label + "？")
+                .setPositiveButton(label, (d, w) -> {
+                    mStore.setArchived(conv.id, !conv.archived);
+                    refresh();
+                })
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
     }
 
     private void toggleGroup(Row header) {
@@ -255,6 +284,8 @@ public class ConversationListActivity extends Activity {
         } else if (isExecuting()) {
             mSubtitle.setText(getString(R.string.chat_subtitle_executing_format,
                     shorten(task, 28)));
+        } else if (!ChatStore.getTask(this).isEmpty()) {
+            mSubtitle.setText(getString(R.string.chat_subtitle_idle));
         } else {
             mSubtitle.setText(R.string.chat_subtitle_idle);
         }
@@ -405,6 +436,10 @@ public class ConversationListActivity extends Activity {
                     (stateColor & 0x00FFFFFF) | (26 << 24));
             view.setOnClickListener(v ->
                     startActivity(ChatActivity.intent(ConversationListActivity.this, conv.id)));
+            view.setOnLongClickListener(v -> {
+                confirmArchive(conv);
+                return true;
+            });
             return view;
         }
 
