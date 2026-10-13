@@ -1,2 +1,4 @@
 .zcode/
 *.mp4
+.cache/
+out/
