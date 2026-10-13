@@ -101,7 +101,7 @@ none of the runtime (~22 MB `.so` plus Kotlin jars) in the APK.
 
 Enable it at build time:
 
-- Standalone: `WITH_LITERTLM=1 tools/build-apk.sh`. CI publishes this variant
+- Standalone: `WITH_LITERTLM=1 tools/build-apk.sh` (JDK 21+). CI publishes this variant
   as `AIPhoneAssistant-litertlm.apk`.
 - Tree build: `WITH_LITERTLM=1 bash build.sh ...`. The product makefile (e.g.
   `device.mk`) must also set
@@ -174,7 +174,7 @@ repo; `$TREE` is your LineageOS source tree.
 tools/build-apk.sh        # -> out/AIPhoneAssistant.apk (+ .sha256)
 ```
 
-Needs only JDK 17+ and Android SDK build-tools ≥ 35 (`ANDROID_HOME` or
+Needs only JDK 17+ (21+ with `WITH_LITERTLM=1`) and Android SDK build-tools ≥ 35 (`ANDROID_HOME` or
 `BUILD_TOOLS=/path/to/build-tools/35.x`). The script downloads a pinned
 hidden-API framework jar and the public AOSP *test* platform key
 (sha256-verified), then runs aapt2 → javac → d8 → zipalign → apksigner. CI

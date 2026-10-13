@@ -2,7 +2,7 @@
 # AI Phone Assistant - standalone APK build (no AOSP/LineageOS tree needed).
 #
 # Builds a platform-signed AIPhoneAssistant.apk from this repo using only:
-#   - JDK 17+
+#   - JDK 17+ (JDK 21+ with WITH_LITERTLM=1: LiteRT-LM ships Java 21 bytecode)
 #   - Android SDK build-tools >= 35 (aapt2, d8, zipalign, apksigner)
 #   - a pinned framework jar WITH hidden APIs (downloaded, sha256-checked)
 #   - the public AOSP *test* platform key (downloaded, sha256-checked)
@@ -77,6 +77,11 @@ SRC_DIRS=(src)
 LIB_JARS=()
 LITERTLM="$ROOT/libs/litertlm"
 if [ "$WITH_LITERTLM" = 1 ]; then
+    JAVAC_MAJOR="$("$JAVAC" -version 2>&1 | sed -E 's/^javac ([0-9]+).*/\1/')"
+    if [ "${JAVAC_MAJOR:-0}" -lt 21 ] 2>/dev/null; then
+        echo "WITH_LITERTLM=1 needs JDK 21+ (LiteRT-LM is Java 21 bytecode); found: $("$JAVAC" -version 2>&1)" >&2
+        exit 1
+    fi
     "$ROOT/tools/fetch-litertlm.sh"
     SRC_DIRS+=(src-litertlm)
     LIB_JARS=(
