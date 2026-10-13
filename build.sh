@@ -9,6 +9,9 @@
 #   aosp-root    $AOSP_ROOT env var, else required
 #   lunch-combo  $LUNCH_COMBO env var, else "<guess>-userdebug" (see below)
 #
+# WITH_LITERTLM=1 also ships the optional on-device LLM backend (LiteRT-LM);
+# the product must set the matching Soong config variable, see Android.bp.
+#
 # The [product] used for the output path is derived from the lunch combo's
 # first segment with a leading "lineage_" stripped (LineageOS convention:
 # lineage_lmi-ap3a-userdebug -> out/target/product/lmi).
@@ -67,9 +70,17 @@ echo "=============================================="
 
 # 1. Sync this repo's sources into the tree (app sources only)
 echo "[1/2] Syncing sources to $APP_DEST ..."
-rm -rf "$APP_DEST/src" "$APP_DEST/res"
+rm -rf "$APP_DEST/src" "$APP_DEST/src-litertlm" "$APP_DEST/res" "$APP_DEST/libs"
 cp -r "$APP_SOURCE/src" "$APP_DEST/"
 cp -r "$APP_SOURCE/res" "$APP_DEST/"
+if [ "${WITH_LITERTLM:-0}" = 1 ]; then
+    # Optional on-device LLM backend: sources + LiteRT-LM runtime (libs/,
+    # incl. its generated Android.bp). The product must ALSO set
+    #   $(call soong_config_set,aiphoneassistant,with_litertlm,true)
+    # or Soong builds the remote-only app.
+    "$APP_SOURCE/tools/fetch-litertlm.sh"
+    cp -r "$APP_SOURCE/src-litertlm" "$APP_SOURCE/libs" "$APP_DEST/"
+fi
 cp "$APP_SOURCE/Android.bp" "$APP_SOURCE/AndroidManifest.xml" \
    "$APP_SOURCE/privapp-permissions-aiphoneassistant.xml" \
    "$APP_SOURCE/proguard.flags" "$APP_DEST/"

@@ -47,3 +47,14 @@ maintained in the WD40 repo
 They only matter for full image builds/flashes; `adb install -r` updates
 need nothing extra. Remember SELinux policy changes always require a full
 image flash.
+
+Optional on-device LLM backend (LiteRT-LM, off by default): to include it in
+the image, add this to `device.mk`
+
+```make
+$(call soong_config_set,aiphoneassistant,with_litertlm,true)
+```
+
+and build with `WITH_LITERTLM=1 bash build.sh ...`. The script then also syncs
+`src-litertlm/` and the fetched runtime in `libs/`, including its generated
+`Android.bp`.

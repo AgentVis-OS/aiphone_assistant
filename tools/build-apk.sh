@@ -2,19 +2,24 @@
 # AI Phone Assistant - standalone APK build (no AOSP/LineageOS tree needed).
 #
 # Builds a platform-signed AIPhoneAssistant.apk from this repo using only:
-#   - JDK 17+
+#   - JDK 17+ (JDK 21+ with WITH_LITERTLM=1: LiteRT-LM ships Java 21 bytecode)
 #   - Android SDK build-tools >= 35 (aapt2, d8, zipalign, apksigner)
 #   - a pinned framework jar WITH hidden APIs (downloaded, sha256-checked)
 #   - the public AOSP *test* platform key (downloaded, sha256-checked)
+#   - optionally, the LiteRT-LM on-device LLM runtime + Kotlin/gson jars
+#     (WITH_LITERTLM=1; tools/fetch-litertlm.sh, sha256-checked)
 #
 # Usage:
-#   tools/build-apk.sh                # -> out/AIPhoneAssistant.apk (+ .sha256)
+#   tools/build-apk.sh                    # -> out/AIPhoneAssistant.apk (+ .sha256)
+#   WITH_LITERTLM=1 tools/build-apk.sh    # + on-device LLM backend (~+22 MB)
 #
 # Environment (all optional):
 #   BUILD_TOOLS   dir with aapt2/d8/zipalign/apksigner (default: newest
 #                 $ANDROID_HOME/build-tools/*, else tools found on PATH)
 #   JAVAC         javac binary (default: javac on PATH)
 #   VERSION_CODE  default 35        VERSION_NAME  default 15
+#   WITH_LITERTLM 1 = include the on-device LLM backend (src-litertlm/ +
+#                 LiteRT-LM runtime); default 0 = remote API only
 #
 # IMPORTANT: the APK is signed with the public AOSP test platform key, so it
 # only installs/updates over builds signed with that key (the default for
@@ -39,6 +44,7 @@ PEM_SHA256="9837de028f460c35cc8d3fa45f14eecce30f6fbfe4b93d399aef1acb80c20d14"
 VERSION_CODE="${VERSION_CODE:-35}"
 VERSION_NAME="${VERSION_NAME:-15}"
 JAVAC="${JAVAC:-javac}"
+WITH_LITERTLM="${WITH_LITERTLM:-0}"
 
 # --- tool discovery --------------------------------------------------------
 if [ -z "${BUILD_TOOLS:-}" ] && [ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]; then
@@ -66,33 +72,75 @@ fetch "$FRAMEWORK_URL" "$FW" "$FRAMEWORK_SHA256"
 fetch "$KEY_BASE/platform.pk8" "$CACHE/platform.pk8" "$PK8_SHA256"
 fetch "$KEY_BASE/platform.x509.pem" "$CACHE/platform.x509.pem" "$PEM_SHA256"
 
-rm -rf "$WORK"; mkdir -p "$WORK"/{gen,classes,dex}
+# Optional on-device LLM runtime (LiteRT-LM AAR + Kotlin/gson jars).
+SRC_DIRS=(src)
+LIB_JARS=()
+LITERTLM="$ROOT/libs/litertlm"
+if [ "$WITH_LITERTLM" = 1 ]; then
+    JAVAC_MAJOR="$("$JAVAC" -version 2>&1 | sed -E 's/^javac ([0-9]+).*/\1/')"
+    if [ "${JAVAC_MAJOR:-0}" -lt 21 ] 2>/dev/null; then
+        echo "WITH_LITERTLM=1 needs JDK 21+ (LiteRT-LM is Java 21 bytecode); found: $("$JAVAC" -version 2>&1)" >&2
+        exit 1
+    fi
+    "$ROOT/tools/fetch-litertlm.sh"
+    SRC_DIRS+=(src-litertlm)
+    LIB_JARS=(
+        "$LITERTLM/litertlm-classes.jar"
+        "$LITERTLM/gson.jar"
+        "$LITERTLM/kotlin-stdlib.jar"
+        "$LITERTLM/kotlin-reflect.jar"
+        "$LITERTLM/kotlinx-coroutines-core-jvm.jar"
+        "$LITERTLM/kotlinx-coroutines-android.jar"
+    )
+fi
+CLASSPATH="$FW"
+for jar in "${LIB_JARS[@]}"; do CLASSPATH="$CLASSPATH:$jar"; done
+
+rm -rf "$WORK"; mkdir -p "$WORK"/{gen,classes,dex,lib/arm64-v8a}
 cd "$ROOT"
 
 # 1. Resources: build the APK from the aapt2 link OUTPUT (see AGENTS.md; reusing
 #    an old APK's resources.arsc silently misrenders strings).
+#    With LiteRT-LM the JNI lib is mapped straight from the APK, so mark it
+#    extractNativeLibs="false" (Soong does the same via use_embedded_native_libs).
+MANIFEST=AndroidManifest.xml
+if [ "$WITH_LITERTLM" = 1 ]; then
+    MANIFEST="$WORK/AndroidManifest.xml"
+    sed 's|<application|<application android:extractNativeLibs="false"|' \
+        AndroidManifest.xml > "$MANIFEST"
+fi
 "$AAPT2" compile --dir res -o "$WORK/res.zip"
 "$AAPT2" link -o "$WORK/full-res.apk" -I "$FW" \
-    --manifest AndroidManifest.xml \
+    --manifest "$MANIFEST" \
     --min-sdk-version 35 --target-sdk-version 35 \
     --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
     --java "$WORK/gen" "$WORK/res.zip"
 
 # 2. Java -> classes (hidden APIs come from the pinned framework jar).
-find src "$WORK/gen" -name '*.java' > "$WORK/sources.txt"
+find "${SRC_DIRS[@]}" "$WORK/gen" -name '*.java' > "$WORK/sources.txt"
 "$JAVAC" -source 17 -target 17 -Xlint:-options -nowarn -encoding UTF-8 \
-    -classpath "$FW" -d "$WORK/classes" @"$WORK/sources.txt"
+    -classpath "$CLASSPATH" -d "$WORK/classes" @"$WORK/sources.txt"
 
-# 3. Dex.
+# 3. Dex (app classes + any LiteRT-LM/Kotlin jars; d8 emits classes2.dex...
+#    as needed - native multidex at min-api 34).
 find "$WORK/classes" -name '*.class' > "$WORK/classlist.txt"
-"$D8" --release --min-api 34 --lib "$FW" --output "$WORK/dex" @"$WORK/classlist.txt"
+"$D8" --release --min-api 34 --lib "$FW" --output "$WORK/dex" \
+    --map-diagnostics warning none \
+    @"$WORK/classlist.txt" ${LIB_JARS[@]+"${LIB_JARS[@]}"}
 
-# 4. Assemble, align, sign.
+# 4. Assemble, align, sign. The JNI lib (if any) is stored uncompressed and
+#    page-aligned (extractNativeLibs="false" in the manifest).
 cp "$WORK/full-res.apk" "$WORK/final.apk"
-zip -q -j "$WORK/final.apk" "$WORK/dex/classes.dex"
-"$ZIPALIGN" -f 4 "$WORK/final.apk" "$WORK/final-aligned.apk"
+zip -q -j "$WORK/final.apk" "$WORK"/dex/classes*.dex
+if [ "$WITH_LITERTLM" = 1 ]; then
+    cp "$LITERTLM/arm64-v8a/liblitertlm_jni.so" "$WORK/lib/arm64-v8a/"
+    (cd "$WORK" && zip -q -0 final.apk lib/arm64-v8a/liblitertlm_jni.so)
+fi
+# -P 16: 16 KB page alignment (build-tools >= 35); older zipalign: 4 KB (-p).
+if "$ZIPALIGN" 2>&1 | grep -q -- '-P <pagesize'; then ALIGN_SO=(-P 16); else ALIGN_SO=(-p); fi
+"$ZIPALIGN" -f "${ALIGN_SO[@]}" 4 "$WORK/final.apk" "$WORK/final-aligned.apk"
 "$APKSIGNER" sign --key "$CACHE/platform.pk8" --cert "$CACHE/platform.x509.pem" \
     --out "$OUT/AIPhoneAssistant.apk" "$WORK/final-aligned.apk"
 "$APKSIGNER" verify --print-certs "$OUT/AIPhoneAssistant.apk" | head -2
 (cd "$OUT" && sha256sum AIPhoneAssistant.apk > AIPhoneAssistant.apk.sha256)
-echo "Built $OUT/AIPhoneAssistant.apk"
+echo "Built $OUT/AIPhoneAssistant.apk (on-device LLM backend: $([ "$WITH_LITERTLM" = 1 ] && echo included || echo not included))"

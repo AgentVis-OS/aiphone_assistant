@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2024 The LineageOS Project
+// Copyright (C) 2026 The AgentVisOS Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,25 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-android_app {
+// On-device LLM backend (LiteRT-LM) is optional and OFF by default. Enable it
+// from the product makefile (e.g. device.mk):
+//   $(call soong_config_set,aiphoneassistant,with_litertlm,true)
+// and populate libs/ with tools/fetch-litertlm.sh (build.sh does this when
+// WITH_LITERTLM=1). The fetch script also generates libs/litertlm/Android.bp,
+// which defines the aiphone-litertlm-* modules referenced below.
+soong_config_module_type {
+    name: "aiphone_android_app",
+    module_type: "android_app",
+    config_namespace: "aiphoneassistant",
+    bool_variables: ["with_litertlm"],
+    properties: [
+        "srcs",
+        "static_libs",
+        "use_embedded_native_libs",
+    ],
+}
+
+aiphone_android_app {
     name: "AIPhoneAssistant",
 
     srcs: ["src/**/*.java"],
@@ -38,6 +56,19 @@ android_app {
     optimize: {
         proguard_flags_files: ["proguard.flags"],
         shrink: true,
+    },
+
+    soong_config_variables: {
+        with_litertlm: {
+            srcs: ["src-litertlm/**/*.java"],
+            static_libs: [
+                "aiphone-litertlm-android",
+                "aiphone-litertlm-deps",
+            ],
+            // Keep liblitertlm_jni.so inside the APK (uncompressed,
+            // page-aligned) so adb install -r updates carry it along.
+            use_embedded_native_libs: true,
+        },
     },
 
     required: ["privapp-permissions-aiphoneassistant"],

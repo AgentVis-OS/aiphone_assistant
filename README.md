@@ -77,6 +77,9 @@ More in [`demo_screens/`](demo_screens/).
    - Zhipu: `https://open.bigmodel.cn/api/paas/v4/chat/completions` (model `glm-4v-plus`)
    - Local: `http://192.168.1.100:11434/v1/chat/completions` (Ollama, vLLM, ...)
 3. Set **Model** and **API Key** (leave the key empty for local servers).
+   Builds that include the optional on-device backend can set **Backend** to
+   *On-device* to run Gemma 4 on the phone instead — see
+   [On-device model](#on-device-model-gemma-4-e2b-via-litert-lm).
 4. Tap **Test Connection** — it sends a text-only ping and toasts the result.
 5. Set a **Task**, e.g. *“打开设置并调高亮度”* or *"open the browser and search
    for the weather"*.
@@ -87,6 +90,43 @@ Everything is stored in the app's `SharedPreferences`
 (`/data/user/0/com.android.aiphoneassistant/shared_prefs/ai_phone_assistant.xml`
 when running as system uid) and is re-read on every request, so you can change
 the task or endpoint while it runs. Clearing the task makes the assistant idle.
+
+## On-device model (Gemma 4 E2B via LiteRT-LM)
+
+Optional, **off by default**. With **Backend = On-device**, the same prompt and
+screenshot are run locally by
+[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) 0.18.0, so no network
+is needed. Builds without it are remote-only: no Backend rows in Settings, and
+none of the runtime (~22 MB `.so` plus Kotlin jars) in the APK.
+
+Enable it at build time:
+
+- Standalone: `WITH_LITERTLM=1 tools/build-apk.sh` (JDK 21+). CI publishes this variant
+  as `AIPhoneAssistant-litertlm.apk`.
+- Tree build: `WITH_LITERTLM=1 bash build.sh ...`. The product makefile (e.g.
+  `device.mk`) must also set
+  `$(call soong_config_set,aiphoneassistant,with_litertlm,true)`.
+
+The backend code lives in `src-litertlm/`. `tools/fetch-litertlm.sh` downloads
+the pinned runtime into `libs/` (gitignored).
+
+The model is not in the APK. Download
+[`gemma-4-E2B-it.litertlm`](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm)
+(~2.6 GB, Apache-2.0, not gated) and copy it into the app's private storage.
+`adb root` is required:
+
+```bash
+adb push gemma-4-E2B-it.litertlm /data/local/tmp/
+adb shell 'd=/data/user/0/com.android.aiphoneassistant/files/models; mkdir -p $d && \
+  mv /data/local/tmp/gemma-4-E2B-it.litertlm $d/ && chown -R system:system $d && restorecon -R $d'
+```
+
+That path is the default **On-device Model File**; change it in Settings to use
+another `.litertlm`. **On-device Accelerator** = GPU (OpenCL) falls back to CPU
+if the GPU backend fails to load. The model is loaded on the first request
+(seconds), kept resident while the service runs, and unloaded when it stops.
+Expect roughly 5–7 tok/s decode and tens of seconds per round on a
+Snapdragon 865, and up to ~3.6 GB RAM peak on image turns.
 
 ## LLM response format
 
@@ -134,7 +174,7 @@ repo; `$TREE` is your LineageOS source tree.
 tools/build-apk.sh        # -> out/AIPhoneAssistant.apk (+ .sha256)
 ```
 
-Needs only JDK 17+ and Android SDK build-tools ≥ 35 (`ANDROID_HOME` or
+Needs only JDK 17+ (21+ with `WITH_LITERTLM=1`) and Android SDK build-tools ≥ 35 (`ANDROID_HOME` or
 `BUILD_TOOLS=/path/to/build-tools/35.x`). The script downloads a pinned
 hidden-API framework jar and the public AOSP *test* platform key
 (sha256-verified), then runs aapt2 → javac → d8 → zipalign → apksigner. CI
@@ -218,7 +258,7 @@ adb shell dmesg | grep avc | grep system_app
 
 ## License
 
-Copyright (C) 2024 The LineageOS Project
+Copyright (C) 2026 The AgentVisOS Project
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

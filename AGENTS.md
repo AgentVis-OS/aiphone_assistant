@@ -45,7 +45,7 @@ tree has one previous successful build (the APK and intermediates under
 
    ```bash
    cp $TREE/out/target/product/lmi/system_ext/priv-app/AIPhoneAssistant/AIPhoneAssistant.apk new.apk
-   zip -q new.apk classes.dex          # replaces the classes.dex entry
+   zip -q new.apk classes*.dex         # replaces the classes.dex entries
    $TREE/out/host/linux-x86/bin/zipalign -f 4 new.apk aligned.apk
    $TREE/out/host/linux-x86/bin/apksigner sign \
      --key $TREE/build/target/product/security/platform.pk8 \
@@ -53,6 +53,16 @@ tree has one previous successful build (the APK and intermediates under
      --out aiphone.apk aligned.apk
    adb install -r aiphone.apk
    ```
+
+LiteRT-LM (optional on-device LLM, off by default; see README): when the
+tree build has it enabled, also compile `src-litertlm/`, and add
+`libs/litertlm/*.jar` (from `tools/fetch-litertlm.sh`) to the javac classpath
+and as d8 program inputs alongside `@classlist.txt`. The base APK must already contain
+`lib/arm64-v8a/liblitertlm_jni.so`, which is true only after a full build that
+includes it. Until then, iterate with `tools/build-apk.sh` instead. It
+assembles the dex, the `.so` (stored, page-aligned) and the manifest itself,
+using the tree's host tools:
+`WITH_LITERTLM=1 BUILD_TOOLS=$TREE/out/host/linux-x86/bin JAVAC=$TREE/prebuilts/jdk/jdk21/linux-x86/bin/javac tools/build-apk.sh`.
 
 ### Resource / manifest changes
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024 The LineageOS Project
+ * Copyright (C) 2026 The AgentVisOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,12 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * Configuration is read from the shared preferences written by SettingsActivity
  * on every request, so changes take effect without restarting the service:
- *   endpoint / model / api_key / task
+ *   backend / endpoint / model / api_key / local_model_path / local_accel
+ *
+ * With backend "local" (only in builds that include LiteRT-LM, see
+ * {@link LocalInference}) the same prompt and screenshot are run on-device,
+ * e.g. by Gemma 4 E2B, instead of over HTTP; prompt building and reply
+ * parsing are shared by both transports.
  *
  * The assistant is task-driven: the user's task text is included in the prompt
  * and the model is explicitly allowed to answer "none" when no action helps,
@@ -67,6 +72,11 @@ public class LLMClientService {
     public static final String KEY_API_KEY = "api_key";
     public static final String KEY_TASK = "task";
     public static final String KEY_CAPTURE_INTERVAL = "capture_interval";
+    public static final String KEY_BACKEND = "backend";
+    public static final String KEY_LOCAL_MODEL_PATH = "local_model_path";
+    public static final String KEY_LOCAL_ACCEL = "local_accel";
+    public static final String BACKEND_REMOTE = "remote";
+    public static final String BACKEND_LOCAL = "local";
     public static final int DEFAULT_CAPTURE_INTERVAL_MS = 500;
 
     // Image compression settings. The model receives a downscaled image; the
@@ -74,6 +84,25 @@ public class LLMClientService {
     // coordinates so injections land where the model intended.
     private static final int JPEG_QUALITY = 80;
     private static final int MAX_IMAGE_SIZE = 1024;
+    // On-device the vision encoder resizes anyway; a smaller JPEG keeps the
+    // decode + preprocessing cheap.
+    private static final int LOCAL_MAX_IMAGE_SIZE = 768;
+    private static final int NORMALIZED_COORDS = 1000;
+
+    // JSON schema for constrained decoding on-device: one action object with
+    // the fields parseDecision understands, coordinates in 0-1000.
+    private static final String COORD =
+            "{\"type\":\"integer\",\"minimum\":0,\"maximum\":1000}";
+    private static final String ACTION_SCHEMA = "{\"type\":\"object\",\"properties\":{"
+            + "\"action\":{\"type\":\"string\",\"enum\":[\"tap\",\"swipe\","
+            + "\"long_press\",\"scroll\",\"key_press\",\"text_input\",\"wait\","
+            + "\"none\",\"done\"]},"
+            + "\"x\":" + COORD + ",\"y\":" + COORD + ","
+            + "\"endX\":" + COORD + ",\"endY\":" + COORD + ","
+            + "\"deltaY\":{\"type\":\"integer\"},\"durationMs\":{\"type\":\"integer\"},"
+            + "\"key\":{\"type\":\"string\"},\"text\":{\"type\":\"string\"},"
+            + "\"summary\":{\"type\":\"string\"}},"
+            + "\"required\":[\"action\"],\"additionalProperties\":false}";
 
     // HTTP timeouts
     private static final int CONNECT_TIMEOUT_MS = 10000;
@@ -87,16 +116,44 @@ public class LLMClientService {
     // be interrupted (disconnect() aborts the blocking read on the executor).
     private final AtomicReference<HttpURLConnection> mInFlight = new AtomicReference<>();
     private final AtomicBoolean mCancelled = new AtomicBoolean(false);
+    /** Null when this build has no on-device backend. */
+    private final LocalInference mLocal;
 
     public LLMClientService(Context context) {
         mContext = context.getApplicationContext();
         mExecutor = Executors.newSingleThreadExecutor();
         mMainHandler = new Handler(Looper.getMainLooper());
+        mLocal = LocalInference.get(mContext);
     }
 
     /** Read a config value from the shared preferences. */
     public static SharedPreferences getPrefs(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    }
+
+    /** Local backend selected AND compiled into this build. */
+    public static boolean isLocalBackend(SharedPreferences prefs) {
+        return LocalInference.isAvailable()
+                && BACKEND_LOCAL.equals(prefs.getString(KEY_BACKEND, BACKEND_REMOTE));
+    }
+
+    /** Configured on-device model path, defaulting to the app's files dir. */
+    public static String localModelPath(Context context) {
+        String path = getPrefs(context).getString(KEY_LOCAL_MODEL_PATH, "").trim();
+        return path.isEmpty() ? LocalInference.defaultModelFile(context).getPath() : path;
+    }
+
+    public static String localAccel(Context context) {
+        return getPrefs(context).getString(KEY_LOCAL_ACCEL, LocalInference.ACCEL_GPU);
+    }
+
+    /** Whether the selected backend has what it needs to serve a request. */
+    public static boolean isConfigured(Context context) {
+        SharedPreferences prefs = getPrefs(context);
+        if (isLocalBackend(prefs)) {
+            return new java.io.File(localModelPath(context)).canRead();
+        }
+        return !prefs.getString(KEY_ENDPOINT, "").trim().isEmpty();
     }
 
     /**
@@ -120,8 +177,11 @@ public class LLMClientService {
         String endpoint = prefs.getString(KEY_ENDPOINT, "").trim();
         String apiKey = prefs.getString(KEY_API_KEY, "").trim();
         String model = prefs.getString(KEY_MODEL, "gpt-4o").trim();
+        boolean local = isLocalBackend(prefs);
+        String modelPath = localModelPath(mContext);
+        String accel = localAccel(mContext);
 
-        if (endpoint.isEmpty() || task == null || task.trim().isEmpty()) {
+        if ((!local && endpoint.isEmpty()) || task == null || task.trim().isEmpty()) {
             if (callback != null) {
                 callback.onError("LLM endpoint or task not configured");
             }
@@ -133,13 +193,34 @@ public class LLMClientService {
         // block later analysis rounds (the single-thread executor would).
         Thread t = new Thread(() -> {
             try {
-                Bitmap scaled = scaleBitmap(screenshot);
-                String imageBase64 = bitmapToBase64(scaled);
+                Bitmap scaled = scaleBitmap(screenshot,
+                        local ? LOCAL_MAX_IMAGE_SIZE : MAX_IMAGE_SIZE);
+                // Gemma grounds in Gemini-style coordinates normalized to
+                // 0-1000 regardless of the image size (asking for pixels
+                // still yields 0-1000 values), so the local prompt asks for
+                // that space and replies are rescaled from 1000x1000.
+                int coordW = local ? NORMALIZED_COORDS : scaled.getWidth();
+                int coordH = local ? NORMALIZED_COORDS : scaled.getHeight();
                 String prompt = buildPrompt(task, scaled.getWidth(), scaled.getHeight(),
-                        recentActions);
-                String response = sendToLLM(endpoint, apiKey, model, prompt, imageBase64);
-                LLMDecision decision = parseDecision(response, screenW, screenH,
-                        scaled.getWidth(), scaled.getHeight());
+                        recentActions, local);
+                String response;
+                if (local) {
+                    requireLocal();
+                    response = mLocal.generate(modelPath, accel, prompt, bitmapToJpeg(scaled),
+                            ACTION_SCHEMA);
+                    Log.i(TAG, "Local reply: " + shorten(response, 200));
+                } else {
+                    String imageBase64 = Base64.encodeToString(bitmapToJpeg(scaled),
+                            Base64.NO_WRAP);
+                    response = sendToLLM(endpoint, apiKey, model, prompt, imageBase64);
+                }
+                LLMDecision parsed = parseDecision(response, screenW, screenH,
+                        coordW, coordH);
+                // The prompt history must be in the model's coordinate space,
+                // or it copies screen-pixel values back as 0-1000 coordinates.
+                // The constrained reply is exactly the action JSON.
+                LLMDecision decision = local
+                        ? parsed.withHistoryEntry(shorten(response, 200)) : parsed;
                 if (scaled != screenshot) {
                     scaled.recycle();
                 }
@@ -177,6 +258,9 @@ public class LLMClientService {
      */
     public void cancelInFlight() {
         mCancelled.set(true);
+        if (mLocal != null) {
+            mLocal.cancel();
+        }
         HttpURLConnection connection = mInFlight.get();
         if (connection != null) {
             connection.disconnect();
@@ -193,6 +277,10 @@ public class LLMClientService {
         String apiKey = prefs.getString(KEY_API_KEY, "").trim();
         String model = prefs.getString(KEY_MODEL, "gpt-4o").trim();
 
+        if (isLocalBackend(prefs)) {
+            testLocal(callback);
+            return;
+        }
         if (endpoint.isEmpty()) {
             if (callback != null) {
                 callback.onResult(false, "Endpoint not configured");
@@ -220,6 +308,42 @@ public class LLMClientService {
         });
     }
 
+    /** Load the on-device model (if needed) and run a tiny text prompt. */
+    private void testLocal(TestCallback callback) {
+        String modelPath = localModelPath(mContext);
+        String accel = localAccel(mContext);
+        mExecutor.execute(() -> {
+            try {
+                long t0 = android.os.SystemClock.elapsedRealtime();
+                requireLocal();
+                String reply = mLocal.generate(modelPath, accel,
+                        "Reply with the single word OK and nothing else.", null, null);
+                long ms = android.os.SystemClock.elapsedRealtime() - t0;
+                String detail = "Model replied: " + shorten(reply, 40) + " (" + ms + " ms, "
+                        + mLocal.loadedAccel() + ")";
+                mMainHandler.post(() -> {
+                    if (callback != null) {
+                        callback.onResult(true, detail);
+                    }
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Local model test failed", e);
+                String message = e.getMessage() != null ? e.getMessage() : e.toString();
+                mMainHandler.post(() -> {
+                    if (callback != null) {
+                        callback.onResult(false, shorten(message, 200));
+                    }
+                });
+            }
+        });
+    }
+
+    private void requireLocal() throws IOException {
+        if (mLocal == null) {
+            throw new IOException("On-device backend failed to initialize");
+        }
+    }
+
     private static String shorten(String s, int max) {
         if (s == null) {
             return "";
@@ -229,10 +353,14 @@ public class LLMClientService {
     }
 
     private String buildPrompt(String task, int imageWidth, int imageHeight,
-            List<String> recentActions) {
+            List<String> recentActions, boolean normalizedCoords) {
         StringBuilder prompt = new StringBuilder();
-        prompt.append("You are shown a screenshot of an Android phone (image size: ")
-                .append(imageWidth).append("x").append(imageHeight).append(" pixels). ")
+        prompt.append("You are shown a screenshot of an Android phone");
+        if (!normalizedCoords) {
+            prompt.append(" (image size: ").append(imageWidth).append("x")
+                    .append(imageHeight).append(" pixels)");
+        }
+        prompt.append(". ")
                 .append("The user's task: \"").append(task).append("\".\n");
         if (recentActions != null && !recentActions.isEmpty()) {
             prompt.append("Actions you already performed for this task, oldest first:\n");
@@ -260,30 +388,35 @@ public class LLMClientService {
                 .append("{\"action\":\"done\",\"summary\":\"<one short sentence>\"}")
                 .append("  // ONLY when the task's goal is now VISIBLY achieved on this screen; ")
                 .append("write the summary in the same language as the user's task\n")
-                .append("Coordinates must be in image pixel space. Rules: tap precisely on visible ")
+                .append(normalizedCoords
+                        ? "Coordinates are normalized to 0-" + NORMALIZED_COORDS + " on both axes "
+                                + "(0,0 = top-left, " + NORMALIZED_COORDS + "," + NORMALIZED_COORDS
+                                + " = bottom-right of the screenshot). "
+                        : "Coordinates must be in image pixel space. ")
+                .append("Rules: tap precisely on visible ")
                 .append("controls; if the previous action visibly failed, try a different approach; ")
                 .append("choose \"done\" when the goal is clearly reached, \"wait\" while loading, ")
                 .append("\"none\" only when stuck with nothing to try.");
         return prompt.toString();
     }
 
-    /** Downscale so the largest dimension is at most {@link #MAX_IMAGE_SIZE}. */
-    private Bitmap scaleBitmap(Bitmap bitmap) {
+    /** Downscale so the largest dimension is at most {@code maxSize}. */
+    private Bitmap scaleBitmap(Bitmap bitmap, int maxSize) {
         int width = bitmap.getWidth();
         int height = bitmap.getHeight();
         int maxDim = Math.max(width, height);
-        if (maxDim <= MAX_IMAGE_SIZE) {
+        if (maxDim <= maxSize) {
             return bitmap;
         }
-        float scale = (float) MAX_IMAGE_SIZE / maxDim;
+        float scale = (float) maxSize / maxDim;
         return Bitmap.createScaledBitmap(bitmap,
                 Math.round(width * scale), Math.round(height * scale), true);
     }
 
-    private String bitmapToBase64(Bitmap bitmap) {
+    private byte[] bitmapToJpeg(Bitmap bitmap) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out);
-        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+        return out.toByteArray();
     }
 
     /**
@@ -590,6 +723,20 @@ public class LLMClientService {
         mExecutor.shutdown();
     }
 
+    /**
+     * Free the shared on-device model (it is otherwise kept resident between
+     * requests). Called when the assistant service goes away.
+     */
+    public static void unloadLocalModel(Context context) {
+        LocalInference local = LocalInference.get(context);
+        if (local == null) {
+            return;
+        }
+        // Closing waits for any in-flight generation; keep it off the caller.
+        local.cancel();
+        new Thread(local::close, "llm-local-close").start();
+    }
+
     /** Callback for screen analysis. */
     public interface LLMCallback {
         void onDecision(LLMDecision decision);
@@ -617,13 +764,28 @@ public class LLMClientService {
         /** One-sentence summary of what was achieved; only for {@link Kind#DONE}. */
         public final String summary;
         public final String raw;
+        /**
+         * How to describe the action in later prompts, in the model's own
+         * coordinate space; null = use the screen-pixel description.
+         */
+        public final String historyEntry;
 
         private LLMDecision(Kind kind, InputInjectionService.InputAction action,
                 String summary, String raw) {
+            this(kind, action, summary, raw, null);
+        }
+
+        private LLMDecision(Kind kind, InputInjectionService.InputAction action,
+                String summary, String raw, String historyEntry) {
             this.kind = kind;
             this.action = action;
             this.summary = summary;
             this.raw = raw;
+            this.historyEntry = historyEntry;
+        }
+
+        LLMDecision withHistoryEntry(String entry) {
+            return new LLMDecision(kind, action, summary, raw, entry);
         }
 
         public static LLMDecision action(InputInjectionService.InputAction action, String raw) {

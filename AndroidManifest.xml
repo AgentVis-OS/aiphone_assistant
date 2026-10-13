@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-     Copyright (C) 2024 The LineageOS Project
+     Copyright (C) 2026 The AgentVisOS Project
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -60,6 +60,14 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true">
+
+        <!-- Optional on-device LLM (LiteRT-LM builds): the GPU backend
+             dlopen()s the vendor OpenCL driver. required="false", so these
+             are harmless in remote-only builds and the CPU backend works
+             without them. extractNativeLibs is set by the build (Soong:
+             use_embedded_native_libs; tools/build-apk.sh: WITH_LITERTLM). -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
 
         <!-- Main service: screen capture + LLM + input injection -->
         <service

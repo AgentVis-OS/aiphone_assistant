@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024 The LineageOS Project
+ * Copyright (C) 2026 The AgentVisOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,8 +35,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * Settings UI: enable/disable the assistant, configure the LLM endpoint,
- * model, API key and capture interval, and — most importantly — the TASK the
+ * Settings UI: enable/disable the assistant, pick the backend (remote API or
+ * on-device LiteRT-LM model), configure the LLM endpoint, model, API key and
+ * capture interval, and — most importantly — the TASK the
  * assistant should work on. Without a task the assistant stays idle.
  */
 public class SettingsActivity extends Activity {
@@ -52,6 +53,9 @@ public class SettingsActivity extends Activity {
     private TextView mModelText;
     private TextView mApiKeyText;
     private TextView mIntervalText;
+    private TextView mBackendText;
+    private TextView mModelPathText;
+    private TextView mAccelText;
     private ChatStore mStore;
 
     private LLMClientService mTestClient;
@@ -111,6 +115,31 @@ public class SettingsActivity extends Activity {
         layout.addView(createButton("Change Task", () -> editTask()));
         addSpacer(layout);
 
+        // Backend choice + on-device settings: only in builds that include
+        // the LiteRT-LM backend (WITH_LITERTLM); otherwise remote-only.
+        if (LocalInference.isAvailable()) {
+            // Backend: remote OpenAI-compatible API or on-device LiteRT-LM model
+            mBackendText = createConfigRow(layout, "Backend", backendDisplayValue());
+            layout.addView(createButton("Change Backend", () -> editBackend()));
+            addSpacer(layout);
+
+            // On-device model file (.litertlm)
+            mModelPathText = createConfigRow(layout, "On-device Model File",
+                    LLMClientService.localModelPath(this));
+            layout.addView(createButton("Change Model File", () ->
+                    showEditTextDialog("On-device Model File",
+                            LLMClientService.KEY_LOCAL_MODEL_PATH,
+                            LLMClientService.localModelPath(this),
+                            "Path to a .litertlm model readable by the app, e.g. "
+                                    + "gemma-4-E2B-it.litertlm. Leave empty for the default.")));
+            addSpacer(layout);
+
+            // On-device accelerator
+            mAccelText = createConfigRow(layout, "On-device Accelerator", accelDisplayValue());
+            layout.addView(createButton("Change Accelerator", () -> editAccel()));
+            addSpacer(layout);
+        }
+
         // Endpoint
         mEndpointText = createConfigRow(layout, "LLM Endpoint",
                 mPrefs.getString(LLMClientService.KEY_ENDPOINT, DEFAULT_ENDPOINT));
@@ -165,6 +194,48 @@ public class SettingsActivity extends Activity {
     private String taskDisplayValue() {
         String task = mPrefs.getString(LLMClientService.KEY_TASK, "");
         return task == null || task.trim().isEmpty() ? "(not set - assistant idles)" : task;
+    }
+
+    private String backendDisplayValue() {
+        return LLMClientService.isLocalBackend(mPrefs)
+                ? "On-device (LiteRT-LM)" : "Remote API (OpenAI-compatible)";
+    }
+
+    private String accelDisplayValue() {
+        return LocalInference.ACCEL_CPU.equals(LLMClientService.localAccel(this))
+                ? "CPU" : "GPU (falls back to CPU)";
+    }
+
+    private void editBackend() {
+        String[] labels = {"Remote API (OpenAI-compatible)", "On-device (LiteRT-LM)"};
+        String[] values = {LLMClientService.BACKEND_REMOTE, LLMClientService.BACKEND_LOCAL};
+        int checked = LLMClientService.isLocalBackend(mPrefs) ? 1 : 0;
+        new AlertDialog.Builder(this)
+                .setTitle("Backend")
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    mPrefs.edit().putString(LLMClientService.KEY_BACKEND, values[which]).apply();
+                    updateDisplay();
+                    dialog.dismiss();
+                })
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
+    }
+
+    private void editAccel() {
+        String[] labels = {"GPU (falls back to CPU)", "CPU"};
+        String[] values = {LocalInference.ACCEL_GPU, LocalInference.ACCEL_CPU};
+        int checked = LocalInference.ACCEL_CPU.equals(LLMClientService.localAccel(this))
+                ? 1 : 0;
+        new AlertDialog.Builder(this)
+                .setTitle("On-device Accelerator")
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    mPrefs.edit().putString(LLMClientService.KEY_LOCAL_ACCEL, values[which])
+                            .apply();
+                    updateDisplay();
+                    dialog.dismiss();
+                })
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
     }
 
     private TextView createConfigRow(LinearLayout layout, String label, String value) {
@@ -305,6 +376,11 @@ public class SettingsActivity extends Activity {
 
     private void updateDisplay() {
         mTaskText.setText(taskDisplayValue());
+        if (mBackendText != null) {
+            mBackendText.setText(backendDisplayValue());
+            mModelPathText.setText(LLMClientService.localModelPath(this));
+            mAccelText.setText(accelDisplayValue());
+        }
         mEndpointText.setText(mPrefs.getString(LLMClientService.KEY_ENDPOINT,
                 mEndpointText.getText().toString()));
         mModelText.setText(mPrefs.getString(LLMClientService.KEY_MODEL,

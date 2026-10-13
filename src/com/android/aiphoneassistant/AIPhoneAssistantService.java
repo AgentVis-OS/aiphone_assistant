@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024 The LineageOS Project
+ * Copyright (C) 2026 The AgentVisOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -260,6 +260,7 @@ public class AIPhoneAssistantService extends Service {
         }
         if (mLLMClientService != null) {
             mLLMClientService.release();
+            LLMClientService.unloadLocalModel(this);
         }
         if (mOverlayController != null) {
             mOverlayController.release();
@@ -352,8 +353,7 @@ public class AIPhoneAssistantService extends Service {
                 return;
             }
 
-            SharedPreferences prefs = LLMClientService.getPrefs(AIPhoneAssistantService.this);
-            boolean configured = !prefs.getString(LLMClientService.KEY_ENDPOINT, "").trim().isEmpty()
+            boolean configured = LLMClientService.isConfigured(AIPhoneAssistantService.this)
                     && mCurrentTask != null && !mCurrentTask.trim().isEmpty();
 
             try {
@@ -573,7 +573,8 @@ public class AIPhoneAssistantService extends Service {
             mForcedReanalyses = 0;
             mForcedRound = false;
             if (decision.action.type != InputInjectionService.ActionType.WAIT) {
-                mActionHistory.add(desc);
+                mActionHistory.add(decision.historyEntry != null
+                        ? decision.historyEntry : desc);
                 mChatStore.appendAction(mConvId, desc, mCurrentFrame);
                 broadcastState(ChatStore.STATE_EXECUTING);
             }
