@@ -1,9 +1,21 @@
 # AI Phone Assistant - System Application
 
-A privileged system application for LineageOS/AOSP (built and tested against
-LineageOS 22.2 / Android 15) that watches the screen, asks a vision-capable
-LLM what to do next, and injects touch/key input — like a minimal,
-self-hosted "AI phone agent".
+A resident AI phone agent, not a sideload: a privileged, platform-signed
+system app for LineageOS/AOSP that watches the screen, asks a vision-capable
+LLM what to do next, and injects touch/key input. Because it ships inside the
+system image it needs no accessibility service and no root hacks.
+
+> **Status: alpha.** Built and tested on one device only — POCO F2 Pro
+> (`lmi`) running LineageOS 22.2 / Android 15.
+
+Part of the [AgentVis-OS](https://github.com/AgentVis-OS) project:
+
+| Repo | Role |
+|------|------|
+| **aiphone_assistant** (this repo) | the app: capture → LLM → input loop, chat UI, settings |
+| [WD40](https://github.com/AgentVis-OS/WD40) | system integration: SELinux policy, `device.mk`, priv-app packaging |
+
+This is an add-on for LineageOS, not a standalone OS.
 
 **It is task-driven and off by default.** The assistant only runs when you
 enable it in Settings *and* set a task; otherwise nothing is captured and no
@@ -47,6 +59,14 @@ network call is made.
 - **Task**: configured in Settings. Included in every prompt; the model is
   explicitly allowed (and asked) to answer `none` when no action helps or the
   task is done.
+
+## Screenshots
+
+| Chat / tasks | Executing | Interrupt (3 taps on the top bar) |
+|---|---|---|
+| ![chat](demo_screens/01_chat_idle.png) | ![executing](demo_screens/02_executing_en.png) | ![interrupt](demo_screens/03_interrupt_dialog_en.png) |
+
+More in [`demo_screens/`](demo_screens/).
 
 ## Setup (first run)
 
@@ -105,26 +125,48 @@ platform-signed (`certificate: "platform"` in Android.bp) and installed in
 
 ## Build
 
-One-click for lmi (POCO F2 Pro), syncs source + SELinux into the tree:
+Three ways, from least to most involved. All paths below are relative to this
+repo; `$TREE` is your LineageOS source tree.
+
+### 1. Standalone APK (no AOSP tree)
 
 ```bash
-sudo bash /home/inoki/aiphone_assistant/build_lmi.sh
-
-cd /home/inoki/Builds/LineageOS/lineage-22_2-poco-f2
-source build/envsetup.sh
-lunch lineage_lmi-userdebug
-m AIPhoneAssistant -j$(nproc)
+tools/build-apk.sh        # -> out/AIPhoneAssistant.apk (+ .sha256)
 ```
 
-Quick deploy of just the APK to a rooted test device (needs `adb root`):
+Needs only JDK 17+ and Android SDK build-tools ≥ 35 (`ANDROID_HOME` or
+`BUILD_TOOLS=/path/to/build-tools/35.x`). The script downloads a pinned
+hidden-API framework jar and the public AOSP *test* platform key
+(sha256-verified), then runs aapt2 → javac → d8 → zipalign → apksigner. CI
+runs the same script on every push/PR and attaches the APK to GitHub
+Releases on `v*` tags.
+
+Limits to know about:
+
+- The APK is signed with the **public AOSP test platform key**. It installs
+  (`adb install -r`) only over builds signed with that key — the default for
+  self-built LineageOS, **not** official LineageOS builds.
+- An APK alone is not a working install. The first install needs the
+  privileged-app setup — `/system_ext/priv-app/` placement,
+  `privapp-permissions-aiphoneassistant.xml` and the SELinux policy
+  (`sepolicy/`) — which comes from [WD40](https://github.com/AgentVis-OS/WD40).
+  Releases include these files as `aiphoneassistant-integration.tar.gz`.
+
+### 2. Incremental repack on an existing build
+
+For development once a tree has been built once, see [AGENTS.md](AGENTS.md)
+(~2 minutes, `adb install -r`).
+
+### 3. Full image build
 
 ```bash
-bash /home/inoki/aiphone_assistant/push.sh
+bash build.sh "$TREE" lineage_lmi-ap3a-userdebug
 ```
 
-SELinux rules (`sepolicy/private|vendor/aiphoneassistant.te`) are compiled
-into the image by `build_lmi.sh`; they cannot be pushed at runtime, so after
-changing them do a full image build + flash.
+Syncs the sources into `$TREE/packages/apps/AIPhoneAssistant` and builds with
+the tree's toolchain; details in [BUILD_INTEGRATION.md](BUILD_INTEGRATION.md).
+SELinux rules cannot be pushed at runtime — after changing
+`sepolicy/*/aiphoneassistant.te` do a full image build and flash.
 
 ## Known limitations
 
