@@ -9,3 +9,14 @@
 
 # Keep inner classes (callbacks, action types) accessed across boundaries
 -keepclassmembers class com.android.aiphoneassistant.** { *; }
+
+# LiteRT-LM: native code calls back into these classes over JNI and the
+# Kotlin side uses reflection (kotlin-reflect, gson) on them.
+-keep class com.google.ai.edge.litertlm.** { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keep class kotlin.Metadata { *; }
+-dontwarn com.google.ai.edge.litertlm.**
+-dontwarn kotlin.**
+-dontwarn kotlinx.**
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn org.jetbrains.annotations.**

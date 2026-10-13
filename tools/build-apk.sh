@@ -6,6 +6,8 @@
 #   - Android SDK build-tools >= 35 (aapt2, d8, zipalign, apksigner)
 #   - a pinned framework jar WITH hidden APIs (downloaded, sha256-checked)
 #   - the public AOSP *test* platform key (downloaded, sha256-checked)
+#   - the LiteRT-LM on-device LLM runtime + Kotlin/gson jars
+#     (tools/fetch-litertlm.sh, sha256-checked)
 #
 # Usage:
 #   tools/build-apk.sh                # -> out/AIPhoneAssistant.apk (+ .sha256)
@@ -66,7 +68,20 @@ fetch "$FRAMEWORK_URL" "$FW" "$FRAMEWORK_SHA256"
 fetch "$KEY_BASE/platform.pk8" "$CACHE/platform.pk8" "$PK8_SHA256"
 fetch "$KEY_BASE/platform.x509.pem" "$CACHE/platform.x509.pem" "$PEM_SHA256"
 
-rm -rf "$WORK"; mkdir -p "$WORK"/{gen,classes,dex}
+# On-device LLM runtime (LiteRT-LM AAR + Kotlin/gson jars) -> libs/litertlm.
+"$ROOT/tools/fetch-litertlm.sh"
+LITERTLM="$ROOT/libs/litertlm"
+LIB_JARS=(
+    "$LITERTLM/litertlm-classes.jar"
+    "$LITERTLM/gson.jar"
+    "$LITERTLM/kotlin-stdlib.jar"
+    "$LITERTLM/kotlin-reflect.jar"
+    "$LITERTLM/kotlinx-coroutines-core-jvm.jar"
+    "$LITERTLM/kotlinx-coroutines-android.jar"
+)
+LIB_CP="$(IFS=:; echo "${LIB_JARS[*]}")"
+
+rm -rf "$WORK"; mkdir -p "$WORK"/{gen,classes,dex,lib/arm64-v8a}
 cd "$ROOT"
 
 # 1. Resources: build the APK from the aapt2 link OUTPUT (see AGENTS.md; reusing
@@ -81,16 +96,24 @@ cd "$ROOT"
 # 2. Java -> classes (hidden APIs come from the pinned framework jar).
 find src "$WORK/gen" -name '*.java' > "$WORK/sources.txt"
 "$JAVAC" -source 17 -target 17 -Xlint:-options -nowarn -encoding UTF-8 \
-    -classpath "$FW" -d "$WORK/classes" @"$WORK/sources.txt"
+    -classpath "$FW:$LIB_CP" -d "$WORK/classes" @"$WORK/sources.txt"
 
-# 3. Dex.
+# 3. Dex (app classes + LiteRT-LM/Kotlin jars; d8 emits classes2.dex... as
+#    needed - native multidex at min-api 34).
 find "$WORK/classes" -name '*.class' > "$WORK/classlist.txt"
-"$D8" --release --min-api 34 --lib "$FW" --output "$WORK/dex" @"$WORK/classlist.txt"
+"$D8" --release --min-api 34 --lib "$FW" --output "$WORK/dex" \
+    --map-diagnostics warning none \
+    @"$WORK/classlist.txt" "${LIB_JARS[@]}"
 
-# 4. Assemble, align, sign.
+# 4. Assemble, align, sign. The JNI lib is stored uncompressed and
+#    page-aligned (extractNativeLibs="false" in the manifest).
 cp "$WORK/full-res.apk" "$WORK/final.apk"
-zip -q -j "$WORK/final.apk" "$WORK/dex/classes.dex"
-"$ZIPALIGN" -f 4 "$WORK/final.apk" "$WORK/final-aligned.apk"
+zip -q -j "$WORK/final.apk" "$WORK"/dex/classes*.dex
+cp "$LITERTLM/arm64-v8a/liblitertlm_jni.so" "$WORK/lib/arm64-v8a/"
+(cd "$WORK" && zip -q -0 final.apk lib/arm64-v8a/liblitertlm_jni.so)
+# -P 16: 16 KB page alignment (build-tools >= 35); older zipalign: 4 KB (-p).
+if "$ZIPALIGN" 2>&1 | grep -q -- '-P <pagesize'; then ALIGN_SO=(-P 16); else ALIGN_SO=(-p); fi
+"$ZIPALIGN" -f "${ALIGN_SO[@]}" 4 "$WORK/final.apk" "$WORK/final-aligned.apk"
 "$APKSIGNER" sign --key "$CACHE/platform.pk8" --cert "$CACHE/platform.x509.pem" \
     --out "$OUT/AIPhoneAssistant.apk" "$WORK/final-aligned.apk"
 "$APKSIGNER" verify --print-certs "$OUT/AIPhoneAssistant.apk" | head -2

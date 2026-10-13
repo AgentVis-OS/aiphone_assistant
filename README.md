@@ -77,6 +77,8 @@ More in [`demo_screens/`](demo_screens/).
    - Zhipu: `https://open.bigmodel.cn/api/paas/v4/chat/completions` (model `glm-4v-plus`)
    - Local: `http://192.168.1.100:11434/v1/chat/completions` (Ollama, vLLM, ...)
 3. Set **Model** and **API Key** (leave the key empty for local servers).
+   Or set **Backend** to *On-device* to run Gemma 4 on the phone instead —
+   see [On-device model](#on-device-model-gemma-4-e2b-via-litert-lm).
 4. Tap **Test Connection** — it sends a text-only ping and toasts the result.
 5. Set a **Task**, e.g. *“打开设置并调高亮度”* or *"open the browser and search
    for the weather"*.
@@ -87,6 +89,29 @@ Everything is stored in the app's `SharedPreferences`
 (`/data/user/0/com.android.aiphoneassistant/shared_prefs/ai_phone_assistant.xml`
 when running as system uid) and is re-read on every request, so you can change
 the task or endpoint while it runs. Clearing the task makes the assistant idle.
+
+## On-device model (Gemma 4 E2B via LiteRT-LM)
+
+With **Backend = On-device**, the same prompt and screenshot are run locally by
+[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) (0.18.0, bundled by
+`tools/fetch-litertlm.sh`), so no network is needed. The model is not in the
+APK. Download
+[`gemma-4-E2B-it.litertlm`](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm)
+(~2.6 GB, Apache-2.0, not gated) and copy it into the app's private storage.
+`adb root` is required:
+
+```bash
+adb push gemma-4-E2B-it.litertlm /data/local/tmp/
+adb shell 'd=/data/user/0/com.android.aiphoneassistant/files/models; mkdir -p $d && \
+  mv /data/local/tmp/gemma-4-E2B-it.litertlm $d/ && chown -R system:system $d && restorecon -R $d'
+```
+
+That path is the default **On-device Model File**; change it in Settings to use
+another `.litertlm`. **On-device Accelerator** = GPU (OpenCL) falls back to CPU
+if the GPU backend fails to load. The model is loaded on the first request
+(seconds), kept resident while the service runs, and unloaded when it stops.
+Expect roughly 5–7 tok/s decode and tens of seconds per round on a
+Snapdragon 865, and up to ~3.6 GB RAM peak on image turns.
 
 ## LLM response format
 

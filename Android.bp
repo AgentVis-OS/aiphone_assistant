@@ -40,9 +40,43 @@ android_app {
         shrink: true,
     },
 
+    // On-device LLM runtime (LiteRT-LM). Populate libs/ first with
+    // tools/fetch-litertlm.sh (binaries are not checked in).
+    static_libs: [
+        "aiphone-litertlm-android",
+        "aiphone-litertlm-deps",
+    ],
+    // Keep liblitertlm_jni.so inside the APK (uncompressed, page-aligned) so
+    // adb install -r updates carry it along with the dex.
+    use_embedded_native_libs: true,
+
     required: ["privapp-permissions-aiphoneassistant"],
 
     system_ext_specific: true,
+}
+
+// LiteRT-LM runtime AAR: classes + jni/arm64-v8a/liblitertlm_jni.so
+android_library_import {
+    name: "aiphone-litertlm-android",
+    aars: ["libs/litertlm/litertlm-android.aar"],
+    sdk_version: "current",
+    min_sdk_version: "24",
+    extract_jni: true,
+    static_libs: ["aiphone-litertlm-deps"],
+}
+
+// LiteRT-LM's JVM dependencies (from its POM). Prebuilt and pinned rather than
+// the tree's kotlin/coroutines modules to match the versions it was built with.
+java_import {
+    name: "aiphone-litertlm-deps",
+    jars: [
+        "libs/litertlm/gson.jar",
+        "libs/litertlm/kotlin-stdlib.jar",
+        "libs/litertlm/kotlin-reflect.jar",
+        "libs/litertlm/kotlinx-coroutines-core-jvm.jar",
+        "libs/litertlm/kotlinx-coroutines-android.jar",
+    ],
+    sdk_version: "current",
 }
 
 // Privileged permissions XML file

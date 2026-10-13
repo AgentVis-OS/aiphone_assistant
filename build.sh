@@ -67,9 +67,11 @@ echo "=============================================="
 
 # 1. Sync this repo's sources into the tree (app sources only)
 echo "[1/2] Syncing sources to $APP_DEST ..."
-rm -rf "$APP_DEST/src" "$APP_DEST/res"
+rm -rf "$APP_DEST/src" "$APP_DEST/res" "$APP_DEST/libs"
+"$APP_SOURCE/tools/fetch-litertlm.sh"   # LiteRT-LM runtime -> libs/ (Android.bp)
 cp -r "$APP_SOURCE/src" "$APP_DEST/"
 cp -r "$APP_SOURCE/res" "$APP_DEST/"
+cp -r "$APP_SOURCE/libs" "$APP_DEST/"
 cp "$APP_SOURCE/Android.bp" "$APP_SOURCE/AndroidManifest.xml" \
    "$APP_SOURCE/privapp-permissions-aiphoneassistant.xml" \
    "$APP_SOURCE/proguard.flags" "$APP_DEST/"

@@ -2,3 +2,4 @@
 *.mp4
 .cache/
 out/
+libs/

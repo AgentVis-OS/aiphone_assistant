@@ -59,7 +59,15 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:extractNativeLibs="false">
+
+        <!-- On-device LLM (LiteRT-LM): the GPU backend dlopen()s the vendor
+             OpenCL driver. Optional so the CPU backend works without it.
+             liblitertlm_jni.so is stored uncompressed in the APK and mapped
+             directly (extractNativeLibs="false"). -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
 
         <!-- Main service: screen capture + LLM + input injection -->
         <service
