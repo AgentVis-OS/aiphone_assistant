@@ -77,8 +77,9 @@ More in [`demo_screens/`](demo_screens/).
    - Zhipu: `https://open.bigmodel.cn/api/paas/v4/chat/completions` (model `glm-4v-plus`)
    - Local: `http://192.168.1.100:11434/v1/chat/completions` (Ollama, vLLM, ...)
 3. Set **Model** and **API Key** (leave the key empty for local servers).
-   Or set **Backend** to *On-device* to run Gemma 4 on the phone instead —
-   see [On-device model](#on-device-model-gemma-4-e2b-via-litert-lm).
+   Builds that include the optional on-device backend can set **Backend** to
+   *On-device* to run Gemma 4 on the phone instead — see
+   [On-device model](#on-device-model-gemma-4-e2b-via-litert-lm).
 4. Tap **Test Connection** — it sends a text-only ping and toasts the result.
 5. Set a **Task**, e.g. *“打开设置并调高亮度”* or *"open the browser and search
    for the weather"*.
@@ -92,10 +93,24 @@ the task or endpoint while it runs. Clearing the task makes the assistant idle.
 
 ## On-device model (Gemma 4 E2B via LiteRT-LM)
 
-With **Backend = On-device**, the same prompt and screenshot are run locally by
-[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) (0.18.0, bundled by
-`tools/fetch-litertlm.sh`), so no network is needed. The model is not in the
-APK. Download
+Optional, **off by default**. With **Backend = On-device**, the same prompt and
+screenshot are run locally by
+[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) 0.18.0, so no network
+is needed. Builds without it are remote-only: no Backend rows in Settings, and
+none of the runtime (~22 MB `.so` plus Kotlin jars) in the APK.
+
+Enable it at build time:
+
+- Standalone: `WITH_LITERTLM=1 tools/build-apk.sh`. CI publishes this variant
+  as `AIPhoneAssistant-litertlm.apk`.
+- Tree build: `WITH_LITERTLM=1 bash build.sh ...`. The product makefile (e.g.
+  `device.mk`) must also set
+  `$(call soong_config_set,aiphoneassistant,with_litertlm,true)`.
+
+The backend code lives in `src-litertlm/`. `tools/fetch-litertlm.sh` downloads
+the pinned runtime into `libs/` (gitignored).
+
+The model is not in the APK. Download
 [`gemma-4-E2B-it.litertlm`](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm)
 (~2.6 GB, Apache-2.0, not gated) and copy it into the app's private storage.
 `adb root` is required:

@@ -28,7 +28,13 @@ jobs:
           path: .cache
           key: build-inputs-${{ hashFiles('tools/build-apk.sh', 'tools/fetch-litertlm.sh') }}
 
-      - name: Build APK
+      - name: Build APK (with on-device LLM backend)
+        run: |
+          WITH_LITERTLM=1 tools/build-apk.sh
+          mv out/AIPhoneAssistant.apk out/AIPhoneAssistant-litertlm.apk
+          (cd out && sha256sum AIPhoneAssistant-litertlm.apk > AIPhoneAssistant-litertlm.apk.sha256)
+
+      - name: Build APK (remote API only)
         run: tools/build-apk.sh
 
       - name: Package integrator files
@@ -42,6 +48,8 @@ jobs:
           path: |
             out/AIPhoneAssistant.apk
             out/AIPhoneAssistant.apk.sha256
+            out/AIPhoneAssistant-litertlm.apk
+            out/AIPhoneAssistant-litertlm.apk.sha256
             out/aiphoneassistant-integration.tar.gz
 
       - name: Publish release
@@ -52,4 +60,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" \
             --notes "Platform-signed with the public AOSP test key; see README (Build the APK without an AOSP tree)." \
             out/AIPhoneAssistant.apk out/AIPhoneAssistant.apk.sha256 \
+            out/AIPhoneAssistant-litertlm.apk out/AIPhoneAssistant-litertlm.apk.sha256 \
             out/aiphoneassistant-integration.tar.gz

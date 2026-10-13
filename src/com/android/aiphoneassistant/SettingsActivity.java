@@ -115,26 +115,30 @@ public class SettingsActivity extends Activity {
         layout.addView(createButton("Change Task", () -> editTask()));
         addSpacer(layout);
 
-        // Backend: remote OpenAI-compatible API or on-device LiteRT-LM model
-        mBackendText = createConfigRow(layout, "Backend", backendDisplayValue());
-        layout.addView(createButton("Change Backend", () -> editBackend()));
-        addSpacer(layout);
+        // Backend choice + on-device settings: only in builds that include
+        // the LiteRT-LM backend (WITH_LITERTLM); otherwise remote-only.
+        if (LocalInference.isAvailable()) {
+            // Backend: remote OpenAI-compatible API or on-device LiteRT-LM model
+            mBackendText = createConfigRow(layout, "Backend", backendDisplayValue());
+            layout.addView(createButton("Change Backend", () -> editBackend()));
+            addSpacer(layout);
 
-        // On-device model file (.litertlm)
-        mModelPathText = createConfigRow(layout, "On-device Model File",
-                LLMClientService.localModelPath(this));
-        layout.addView(createButton("Change Model File", () ->
-                showEditTextDialog("On-device Model File",
-                        LLMClientService.KEY_LOCAL_MODEL_PATH,
-                        LLMClientService.localModelPath(this),
-                        "Path to a .litertlm model readable by the app, e.g. "
-                                + "gemma-4-E2B-it.litertlm. Leave empty for the default.")));
-        addSpacer(layout);
+            // On-device model file (.litertlm)
+            mModelPathText = createConfigRow(layout, "On-device Model File",
+                    LLMClientService.localModelPath(this));
+            layout.addView(createButton("Change Model File", () ->
+                    showEditTextDialog("On-device Model File",
+                            LLMClientService.KEY_LOCAL_MODEL_PATH,
+                            LLMClientService.localModelPath(this),
+                            "Path to a .litertlm model readable by the app, e.g. "
+                                    + "gemma-4-E2B-it.litertlm. Leave empty for the default.")));
+            addSpacer(layout);
 
-        // On-device accelerator
-        mAccelText = createConfigRow(layout, "On-device Accelerator", accelDisplayValue());
-        layout.addView(createButton("Change Accelerator", () -> editAccel()));
-        addSpacer(layout);
+            // On-device accelerator
+            mAccelText = createConfigRow(layout, "On-device Accelerator", accelDisplayValue());
+            layout.addView(createButton("Change Accelerator", () -> editAccel()));
+            addSpacer(layout);
+        }
 
         // Endpoint
         mEndpointText = createConfigRow(layout, "LLM Endpoint",
@@ -198,7 +202,7 @@ public class SettingsActivity extends Activity {
     }
 
     private String accelDisplayValue() {
-        return LocalLLMBackend.ACCEL_CPU.equals(LLMClientService.localAccel(this))
+        return LocalInference.ACCEL_CPU.equals(LLMClientService.localAccel(this))
                 ? "CPU" : "GPU (falls back to CPU)";
     }
 
@@ -219,8 +223,8 @@ public class SettingsActivity extends Activity {
 
     private void editAccel() {
         String[] labels = {"GPU (falls back to CPU)", "CPU"};
-        String[] values = {LocalLLMBackend.ACCEL_GPU, LocalLLMBackend.ACCEL_CPU};
-        int checked = LocalLLMBackend.ACCEL_CPU.equals(LLMClientService.localAccel(this))
+        String[] values = {LocalInference.ACCEL_GPU, LocalInference.ACCEL_CPU};
+        int checked = LocalInference.ACCEL_CPU.equals(LLMClientService.localAccel(this))
                 ? 1 : 0;
         new AlertDialog.Builder(this)
                 .setTitle("On-device Accelerator")
@@ -372,9 +376,11 @@ public class SettingsActivity extends Activity {
 
     private void updateDisplay() {
         mTaskText.setText(taskDisplayValue());
-        mBackendText.setText(backendDisplayValue());
-        mModelPathText.setText(LLMClientService.localModelPath(this));
-        mAccelText.setText(accelDisplayValue());
+        if (mBackendText != null) {
+            mBackendText.setText(backendDisplayValue());
+            mModelPathText.setText(LLMClientService.localModelPath(this));
+            mAccelText.setText(accelDisplayValue());
+        }
         mEndpointText.setText(mPrefs.getString(LLMClientService.KEY_ENDPOINT,
                 mEndpointText.getText().toString()));
         mModelText.setText(mPrefs.getString(LLMClientService.KEY_MODEL,

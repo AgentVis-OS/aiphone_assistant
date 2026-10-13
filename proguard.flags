@@ -10,6 +10,12 @@
 # Keep inner classes (callbacks, action types) accessed across boundaries
 -keepclassmembers class com.android.aiphoneassistant.** { *; }
 
+# Optional on-device backend (WITH_LITERTLM builds): looked up by name from
+# LocalInference, so R8 sees no reference to it.
+-keep class com.android.aiphoneassistant.LiteRtLmBackend {
+    static com.android.aiphoneassistant.LiteRtLmBackend get(android.content.Context);
+}
+
 # LiteRT-LM: native code calls back into these classes over JNI and the
 # Kotlin side uses reflection (kotlin-reflect, gson) on them.
 -keep class com.google.ai.edge.litertlm.** { *; }

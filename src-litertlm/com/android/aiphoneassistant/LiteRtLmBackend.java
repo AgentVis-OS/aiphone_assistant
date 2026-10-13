@@ -21,7 +21,6 @@ import android.os.SystemClock;
 import android.util.Log;
 
 import com.google.ai.edge.litertlm.Backend;
-import com.google.ai.edge.litertlm.BenchmarkInfo;
 import com.google.ai.edge.litertlm.Content;
 import com.google.ai.edge.litertlm.Contents;
 import com.google.ai.edge.litertlm.Conversation;
@@ -53,14 +52,15 @@ import java.util.concurrent.atomic.AtomicReference;
  * One instance per process ({@link #get}) so the Settings test and the
  * assistant service share a single loaded model instead of holding two.
  *
+ * Only compiled into builds with LiteRT-LM enabled; the core app reaches it
+ * through {@link LocalInference} (by class name, so keep the name and the
+ * static {@code get(Context)} in sync with LocalInference.Holder).
+ *
  * All methods block and must be called off the main thread, except
  * {@link #cancel()}.
  */
-class LocalLLMBackend {
+class LiteRtLmBackend implements LocalInference {
     private static final String TAG = "AIPhoneAssistant.Local";
-
-    public static final String ACCEL_GPU = "gpu";
-    public static final String ACCEL_CPU = "cpu";
 
     // KV-cache budget: prompt (~400 tokens) + one image (~256-280 tokens) +
     // the short JSON answer fit comfortably.
@@ -73,25 +73,19 @@ class LocalLLMBackend {
     private String mEngineKey;
     private String mEngineAccel;
     private final AtomicReference<Conversation> mActive = new AtomicReference<>();
-    private volatile String mLastStats = "";
     private volatile boolean mCancelled;
 
-    private static LocalLLMBackend sInstance;
+    private static LiteRtLmBackend sInstance;
 
-    static synchronized LocalLLMBackend get(Context context) {
+    static synchronized LiteRtLmBackend get(Context context) {
         if (sInstance == null) {
-            sInstance = new LocalLLMBackend(context);
+            sInstance = new LiteRtLmBackend(context);
         }
         return sInstance;
     }
 
-    private LocalLLMBackend(Context context) {
+    private LiteRtLmBackend(Context context) {
         mContext = context.getApplicationContext();
-    }
-
-    /** Default model location inside the app's private storage. */
-    static File defaultModelFile(Context context) {
-        return new File(new File(context.getFilesDir(), "models"), "gemma-4-E2B-it.litertlm");
     }
 
     /**
@@ -100,7 +94,8 @@ class LocalLLMBackend {
      * answer is always a JSON object matching it (small models otherwise
      * emit malformed JSON or invent fields).
      */
-    String generate(String modelPath, String accel, String prompt, byte[] image,
+    @Override
+    public String generate(String modelPath, String accel, String prompt, byte[] image,
             String jsonSchema) throws IOException {
         synchronized (mLock) {
             Engine engine = ensureEngine(modelPath, accel);
@@ -134,23 +129,7 @@ class LocalLLMBackend {
                         : Contents.Companion.of(prompt);
                 ResponseFormat format = jsonSchema != null
                         ? ResponseFormat.json(jsonSchema) : null;
-                String answer = await(conversation, contents, format);
-                BenchmarkInfo info = null;
-                try {
-                    info = conversation.getBenchmarkInfo();
-                } catch (RuntimeException ignored) {
-                    // benchmark info is optional
-                }
-                if (info != null) {
-                    mLastStats = String.format(java.util.Locale.US,
-                            "%s: prefill %d tok @ %.1f tok/s, decode %d tok @ %.1f tok/s",
-                            mEngineAccel, info.getLastPrefillTokenCount(),
-                            info.getLastPrefillTokensPerSecond(),
-                            info.getLastDecodeTokenCount(),
-                            info.getLastDecodeTokensPerSecond());
-                    Log.i(TAG, mLastStats);
-                }
-                return answer;
+                return await(conversation, contents, format);
             } finally {
                 mActive.compareAndSet(conversation, null);
                 conversation.close();
@@ -267,18 +246,13 @@ class LocalLLMBackend {
         return engine;
     }
 
-    /** Accelerator actually in use ("gpu"/"cpu"), or null before loading. */
-    String loadedAccel() {
+    @Override
+    public String loadedAccel() {
         return mEngineAccel;
     }
 
-    /** Throughput of the last request, for logs and the Settings test. */
-    String lastStats() {
-        return mLastStats;
-    }
-
-    /** Abort the in-flight generation; safe to call from any thread. */
-    void cancel() {
+    @Override
+    public void cancel() {
         mCancelled = true;
         Conversation conversation = mActive.get();
         if (conversation != null) {
@@ -286,8 +260,8 @@ class LocalLLMBackend {
         }
     }
 
-    /** Free the engine (and its memory). */
-    void close() {
+    @Override
+    public void close() {
         cancel();
         synchronized (mLock) {
             closeEngineLocked();

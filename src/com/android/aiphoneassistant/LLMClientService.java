@@ -51,9 +51,10 @@ import java.util.concurrent.atomic.AtomicReference;
  * on every request, so changes take effect without restarting the service:
  *   backend / endpoint / model / api_key / local_model_path / local_accel
  *
- * With backend "local" the same prompt and screenshot are run on-device by
- * {@link LocalLLMBackend} (LiteRT-LM, e.g. Gemma 4 E2B) instead of over HTTP;
- * prompt building and reply parsing are shared by both transports.
+ * With backend "local" (only in builds that include LiteRT-LM, see
+ * {@link LocalInference}) the same prompt and screenshot are run on-device,
+ * e.g. by Gemma 4 E2B, instead of over HTTP; prompt building and reply
+ * parsing are shared by both transports.
  *
  * The assistant is task-driven: the user's task text is included in the prompt
  * and the model is explicitly allowed to answer "none" when no action helps,
@@ -115,13 +116,14 @@ public class LLMClientService {
     // be interrupted (disconnect() aborts the blocking read on the executor).
     private final AtomicReference<HttpURLConnection> mInFlight = new AtomicReference<>();
     private final AtomicBoolean mCancelled = new AtomicBoolean(false);
-    private final LocalLLMBackend mLocal;
+    /** Null when this build has no on-device backend. */
+    private final LocalInference mLocal;
 
     public LLMClientService(Context context) {
         mContext = context.getApplicationContext();
         mExecutor = Executors.newSingleThreadExecutor();
         mMainHandler = new Handler(Looper.getMainLooper());
-        mLocal = LocalLLMBackend.get(mContext);
+        mLocal = LocalInference.get(mContext);
     }
 
     /** Read a config value from the shared preferences. */
@@ -129,18 +131,20 @@ public class LLMClientService {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
+    /** Local backend selected AND compiled into this build. */
     public static boolean isLocalBackend(SharedPreferences prefs) {
-        return BACKEND_LOCAL.equals(prefs.getString(KEY_BACKEND, BACKEND_REMOTE));
+        return LocalInference.isAvailable()
+                && BACKEND_LOCAL.equals(prefs.getString(KEY_BACKEND, BACKEND_REMOTE));
     }
 
     /** Configured on-device model path, defaulting to the app's files dir. */
     public static String localModelPath(Context context) {
         String path = getPrefs(context).getString(KEY_LOCAL_MODEL_PATH, "").trim();
-        return path.isEmpty() ? LocalLLMBackend.defaultModelFile(context).getPath() : path;
+        return path.isEmpty() ? LocalInference.defaultModelFile(context).getPath() : path;
     }
 
     public static String localAccel(Context context) {
-        return getPrefs(context).getString(KEY_LOCAL_ACCEL, LocalLLMBackend.ACCEL_GPU);
+        return getPrefs(context).getString(KEY_LOCAL_ACCEL, LocalInference.ACCEL_GPU);
     }
 
     /** Whether the selected backend has what it needs to serve a request. */
@@ -201,6 +205,7 @@ public class LLMClientService {
                         recentActions, local);
                 String response;
                 if (local) {
+                    requireLocal();
                     response = mLocal.generate(modelPath, accel, prompt, bitmapToJpeg(scaled),
                             ACTION_SCHEMA);
                     Log.i(TAG, "Local reply: " + shorten(response, 200));
@@ -253,7 +258,9 @@ public class LLMClientService {
      */
     public void cancelInFlight() {
         mCancelled.set(true);
-        mLocal.cancel();
+        if (mLocal != null) {
+            mLocal.cancel();
+        }
         HttpURLConnection connection = mInFlight.get();
         if (connection != null) {
             connection.disconnect();
@@ -308,6 +315,7 @@ public class LLMClientService {
         mExecutor.execute(() -> {
             try {
                 long t0 = android.os.SystemClock.elapsedRealtime();
+                requireLocal();
                 String reply = mLocal.generate(modelPath, accel,
                         "Reply with the single word OK and nothing else.", null, null);
                 long ms = android.os.SystemClock.elapsedRealtime() - t0;
@@ -328,6 +336,12 @@ public class LLMClientService {
                 });
             }
         });
+    }
+
+    private void requireLocal() throws IOException {
+        if (mLocal == null) {
+            throw new IOException("On-device backend failed to initialize");
+        }
     }
 
     private static String shorten(String s, int max) {
@@ -714,7 +728,10 @@ public class LLMClientService {
      * requests). Called when the assistant service goes away.
      */
     public static void unloadLocalModel(Context context) {
-        LocalLLMBackend local = LocalLLMBackend.get(context);
+        LocalInference local = LocalInference.get(context);
+        if (local == null) {
+            return;
+        }
         // Closing waits for any in-flight generation; keep it off the caller.
         local.cancel();
         new Thread(local::close, "llm-local-close").start();
