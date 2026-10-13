@@ -1,5 +1,5 @@
 # AI Phone Assistant ProGuard Flags
-# Copyright (C) 2024 The AgentVisOS Project
+# Copyright (C) 2026 The AgentVisOS Project
 
 # Components referenced from AndroidManifest.xml must not be stripped
 -keep class com.android.aiphoneassistant.AIPhoneAssistantApplication { *; }
