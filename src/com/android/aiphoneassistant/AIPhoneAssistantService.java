@@ -24,8 +24,8 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
-import android.graphics.PixelFormat;
 import android.graphics.PointF;
+import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.Image;
@@ -95,6 +95,10 @@ public class AIPhoneAssistantService extends Service {
     // event, so the injection has been dispatched before touches are captured
     // by the bar again.
     private static final long BAR_RETOUCH_DELAY_MS = 120;
+    // Wait for the overlay window to be removed (and the input dispatcher to
+    // learn about it) before injecting.
+    private static final long OVERLAY_GONE_TIMEOUT_MS = 500;
+    private static final long OVERLAY_GONE_SETTLE_MS = 100;
     // Only log the first of a run of consecutive capture failures
     private static final int CAPTURE_FAILURE_LOG_THRESHOLD = 3;
     // Give up (stalled) after this many consecutive LLM request failures
@@ -542,9 +546,23 @@ public class AIPhoneAssistantService extends Service {
                 return;
             }
 
-            PointF point = decision.action.getPrimaryPoint();
-            if (mOverlayController != null && point != null) {
-                mOverlayController.showActing(point.x, point.y);
+            // Permission dialogs ignore touches while any untrusted window covers
+            // them, so remove the overlay before injecting there; everywhere else
+            // keep the acting ripple. The thinking overlay returns with the next
+            // analysis round either way.
+            if (mOverlayController != null) {
+                String top = ForegroundProbe.topPackage();
+                if (ForegroundProbe.isTouchProtected(top)) {
+                    Log.i(TAG, "Foreground " + top + " is touch-protected; hiding overlay");
+                    mOverlayController.hideAndWait(OVERLAY_GONE_TIMEOUT_MS);
+                    sleepQuietly(OVERLAY_GONE_SETTLE_MS);
+                } else {
+                    PointF point = decision.action.getPrimaryPoint();
+                    if (point != null) {
+                        Log.i(TAG, "Foreground " + top + "; showing acting ripple");
+                        mOverlayController.showActing(point.x, point.y);
+                    }
+                }
             }
             String desc = describeAction(decision.action);
             updateFgNotification(getString(R.string.notification_acting_format, desc));

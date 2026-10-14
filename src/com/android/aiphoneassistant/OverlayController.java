@@ -19,9 +19,13 @@ package com.android.aiphoneassistant;
 import android.content.Context;
 import android.graphics.PixelFormat;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.WindowManager;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Controls the user-facing overlay windows.
@@ -88,6 +92,32 @@ public class OverlayController {
     /** Remove the overlay immediately. */
     public void hide() {
         mUiHandler.post(this::hideInternal);
+    }
+
+    /**
+     * Remove the overlay and block until the window is actually gone (or the
+     * timeout passes). Used before injecting input: permission dialogs drop
+     * touches while any untrusted window covers them, even a non-touchable
+     * one, so nothing may be on screen during injection. Call from a
+     * non-UI thread.
+     */
+    public void hideAndWait(long timeoutMs) {
+        if (Looper.myLooper() == mUiHandler.getLooper()) {
+            hideInternal();
+            return;
+        }
+        // Always post, even when mVisible is false: a showThinking() may still
+        // be queued ahead of us and would otherwise add the window afterwards.
+        final CountDownLatch done = new CountDownLatch(1);
+        mUiHandler.post(() -> {
+            hideInternal();
+            done.countDown();
+        });
+        try {
+            done.await(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** Remove the overlay after a short delay, letting the acting marker finish. */
