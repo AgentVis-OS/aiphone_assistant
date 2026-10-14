@@ -24,6 +24,7 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.graphics.PointF;
 import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
@@ -545,12 +546,23 @@ public class AIPhoneAssistantService extends Service {
                 return;
             }
 
-            // No overlay while injecting: permission dialogs ignore touches when
-            // any untrusted window covers them. The overlay is only for thinking
-            // and comes back with the next analysis round.
+            // Permission dialogs ignore touches while any untrusted window covers
+            // them, so remove the overlay before injecting there; everywhere else
+            // keep the acting ripple. The thinking overlay returns with the next
+            // analysis round either way.
             if (mOverlayController != null) {
-                mOverlayController.hideAndWait(OVERLAY_GONE_TIMEOUT_MS);
-                sleepQuietly(OVERLAY_GONE_SETTLE_MS);
+                String top = ForegroundProbe.topPackage();
+                if (ForegroundProbe.isTouchProtected(top)) {
+                    Log.i(TAG, "Foreground " + top + " is touch-protected; hiding overlay");
+                    mOverlayController.hideAndWait(OVERLAY_GONE_TIMEOUT_MS);
+                    sleepQuietly(OVERLAY_GONE_SETTLE_MS);
+                } else {
+                    PointF point = decision.action.getPrimaryPoint();
+                    if (point != null) {
+                        Log.i(TAG, "Foreground " + top + "; showing acting ripple");
+                        mOverlayController.showActing(point.x, point.y);
+                    }
+                }
             }
             String desc = describeAction(decision.action);
             updateFgNotification(getString(R.string.notification_acting_format, desc));
