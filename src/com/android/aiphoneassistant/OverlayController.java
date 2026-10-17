@@ -125,6 +125,19 @@ public class OverlayController {
         return mBarVisible;
     }
 
+    /**
+     * Switch the status glyph at the interrupt bar's left end to the given
+     * agent phase ({@link InterruptBarView#PHASE_OBSERVING}/{@code THINKING}
+     * /{@code ACTING}); a no-op while the bar is not on screen.
+     */
+    public void setInterruptBarPhase(final int phase) {
+        mUiHandler.post(() -> {
+            if (mBarView != null && mBarVisible) {
+                mBarView.setPhase(phase);
+            }
+        });
+    }
+
     // ------------------------------------------------------------------
     // Stop-confirmation dialog
     // ------------------------------------------------------------------

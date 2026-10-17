@@ -423,6 +423,7 @@ public class AIPhoneAssistantService extends Service {
         mCurrentFrame = screenshot;
         if (mOverlayController != null) {
             mOverlayController.showThinking();
+            mOverlayController.setInterruptBarPhase(InterruptBarView.PHASE_THINKING);
         }
         updateFgNotification(getString(R.string.notification_thinking));
 
@@ -505,6 +506,11 @@ public class AIPhoneAssistantService extends Service {
                         Log.w(TAG, "LLM round still stuck; force-recovering loop");
                         endAnalyzeRound();
                         mAnalyzing.set(false);
+                        if (mOverlayController != null) {
+                            mOverlayController.hide();
+                            mOverlayController.setInterruptBarPhase(
+                                    InterruptBarView.PHASE_OBSERVING);
+                        }
                     }
                 }, ANALYZE_TIMEOUT_MS + 15000);
             }
@@ -543,8 +549,11 @@ public class AIPhoneAssistantService extends Service {
             }
 
             PointF point = decision.action.getPrimaryPoint();
-            if (mOverlayController != null && point != null) {
-                mOverlayController.showActing(point.x, point.y);
+            if (mOverlayController != null) {
+                if (point != null) {
+                    mOverlayController.showActing(point.x, point.y);
+                }
+                mOverlayController.setInterruptBarPhase(InterruptBarView.PHASE_ACTING);
             }
             String desc = describeAction(decision.action);
             updateFgNotification(getString(R.string.notification_acting_format, desc));
@@ -585,6 +594,7 @@ public class AIPhoneAssistantService extends Service {
             // Let the acting marker finish, then hide and resume capture.
             if (mOverlayController != null && !mPaused.get() && !mInterrupted) {
                 mOverlayController.hideDelayed(ACT_HIDE_DELAY_MS);
+                mOverlayController.setInterruptBarPhase(InterruptBarView.PHASE_OBSERVING);
             } else if (mOverlayController != null) {
                 mOverlayController.hide();
             }
@@ -595,6 +605,7 @@ public class AIPhoneAssistantService extends Service {
         mAnalyzing.set(false);
         if (mOverlayController != null) {
             mOverlayController.hide();
+            mOverlayController.setInterruptBarPhase(InterruptBarView.PHASE_OBSERVING);
         }
         if (mInterrupted || !mIsRunning.get()) {
             return;
