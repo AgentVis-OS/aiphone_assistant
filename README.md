@@ -150,6 +150,12 @@ The model must answer with a single JSON object:
 - Malformed answers or actions with missing coordinates are ignored — the
   app never guesses a default tap position.
 
+> **Provider note.** Any OpenAI-compatible `/v1/chat/completions` endpoint
+> works. *Settings → Choose Provider* fills the fields for DeepSeek
+> (`deepseek-flash`, which accepts images in the same `image_url` shape this
+> app sends) or OpenAI (`gpt-4o`). Endpoint, model and key stay editable, so
+> Qwen, GLM, vLLM, Ollama and friends work too.
+
 ## Required permissions (signature-level)
 
 | Permission | Purpose |
