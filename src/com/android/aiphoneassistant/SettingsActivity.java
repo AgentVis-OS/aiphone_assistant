@@ -45,9 +45,13 @@ public class SettingsActivity extends Activity {
 
     private static final String DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
     private static final String DEFAULT_MODEL = "gpt-4o";
+    /** DeepSeek exposes an OpenAI-compatible chat-completions endpoint with vision. */
+    private static final String DEEPSEEK_ENDPOINT = "https://api.deepseek.com/v1/chat/completions";
+    private static final String DEEPSEEK_MODEL = "deepseek-flash";
 
     private SharedPreferences mPrefs;
     private Switch mEnableSwitch;
+    private TextView mProviderText;
     private TextView mTaskText;
     private TextView mEndpointText;
     private TextView mModelText;
@@ -140,6 +144,11 @@ public class SettingsActivity extends Activity {
             addSpacer(layout);
         }
 
+        // Provider preset: one tap fills endpoint + model for a known service
+        mProviderText = createConfigRow(layout, "Provider", providerDisplayValue());
+        layout.addView(createButton("Choose Provider", () -> chooseProvider()));
+        addSpacer(layout);
+
         // Endpoint
         mEndpointText = createConfigRow(layout, "LLM Endpoint",
                 mPrefs.getString(LLMClientService.KEY_ENDPOINT, DEFAULT_ENDPOINT));
@@ -189,6 +198,58 @@ public class SettingsActivity extends Activity {
             scroll.setPadding(0, bars.top, 0, bars.bottom);
             return insets;
         });
+    }
+
+    private String providerDisplayValue() {
+        String endpoint = mPrefs.getString(LLMClientService.KEY_ENDPOINT, DEFAULT_ENDPOINT);
+        String e = endpoint == null ? "" : endpoint.trim().toLowerCase(java.util.Locale.ROOT);
+        if (e.startsWith("https://api.deepseek.com")) {
+            return "DeepSeek";
+        }
+        if (e.startsWith("https://api.openai.com")) {
+            return "OpenAI";
+        }
+        return e.isEmpty() ? "(not set)" : "Custom";
+    }
+
+    /**
+     * Fill endpoint + model for a known OpenAI-compatible provider. DeepSeek's
+     * {@code deepseek-flash} accepts images in the same {@code image_url} shape
+     * this app already sends, so no other setting has to change.
+     */
+    private void chooseProvider() {
+        final String[] items = {
+                "DeepSeek — deepseek-flash (vision)",
+                "OpenAI — gpt-4o",
+                "Custom — edit endpoint/model below",
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Choose a provider")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        applyProvider(DEEPSEEK_ENDPOINT, DEEPSEEK_MODEL);
+                    } else if (which == 1) {
+                        applyProvider(DEFAULT_ENDPOINT, DEFAULT_MODEL);
+                    }
+                })
+                .show();
+    }
+
+    private void applyProvider(String endpoint, String model) {
+        mPrefs.edit()
+                .putString(LLMClientService.KEY_ENDPOINT, endpoint)
+                .putString(LLMClientService.KEY_MODEL, model)
+                .apply();
+        if (mEndpointText != null) {
+            mEndpointText.setText(endpoint);
+        }
+        if (mModelText != null) {
+            mModelText.setText(model);
+        }
+        if (mProviderText != null) {
+            mProviderText.setText(providerDisplayValue());
+        }
+        Toast.makeText(this, "Provider set to " + model, Toast.LENGTH_SHORT).show();
     }
 
     private String taskDisplayValue() {
